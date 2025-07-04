@@ -1,5 +1,8 @@
 import sqlite3 from 'sqlite3';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 sqlite3.verbose();
 

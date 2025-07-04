@@ -39,7 +39,7 @@ Required variables:
 - `JWT_SECRET`: 32+ character secret for JWT signing
 - `CLIENT_ID`: Your Fitbit app client ID
 - `CLIENT_SECRET`: Your Fitbit app client secret
-- `REDIRECT_URI`: Your callback URL (e.g., `https://yourdomain.com/auth/callback`)
+- `REDIRECT_URI`: Your callback URL (e.g., `https://yourdomain.com/auth/callback` or `https://localhost:8080/auth/callback` for local dev)
 
 ### 2. Install Dependencies
 
@@ -61,25 +61,37 @@ temperature
 
 Comment out lines with `#` to disable specific scopes.
 
-### 4. Start the Server
+### 4. Generate a Self-Signed TLS Certificate (for local HTTPS)
+
+Fitbit requires HTTPS for all redirect URIs (except for `localhost`). To use HTTPS locally:
+
+```bash
+openssl req -nodes -new -x509 -keyout server.key -out server.cert -days 365
+```
+- When prompted, you can use any values (for local dev).
+- This will create `server.key` and `server.cert` in your project directory.
+
+### 5. Start the Server (with HTTPS)
 
 ```bash
 npm start
 ```
+- The server will run at `https://localhost:8080` by default.
+- The first time you visit, your browser will warn about the self-signed certificate. Accept the risk to proceed.
 
 ## OAuth Setup (One-time)
 
 ### 1. Start OAuth Flow
-```bash
-GET /auth/start
+Visit:
 ```
-This returns an authorization URL and required parameters.
+https://localhost:8080/auth/start
+```
+This will automatically redirect you to Fitbit's authorization page.
 
 ### 2. Complete Authorization
-1. Visit the authorization URL
-2. Grant access to your Fitbit data
-3. You will be redirected to `/authorize` on your server
-4. Your personal JWT token will be displayed in the browser—copy and save it for API access
+1. Grant access to your Fitbit data on Fitbit's site
+2. You will be redirected to `/auth/callback` on your server
+3. Your personal JWT token will be displayed in the browser—copy and save it for API access
 
 ## iOS Shortcuts Integration
 

@@ -1,5 +1,6 @@
-const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
+import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
+import axios from 'axios';
 
 class AuthService {
   constructor() {
@@ -107,8 +108,6 @@ class AuthService {
     if (this.tempStorage?.state !== state) {
       throw new Error('Invalid state parameter');
     }
-
-    const axios = require('axios');
     
     try {
       const response = await axios.post('https://api.fitbit.com/oauth2/token', 
@@ -267,4 +266,4 @@ class AuthService {
   }
 }
 
-module.exports = AuthService;
+export default AuthService;

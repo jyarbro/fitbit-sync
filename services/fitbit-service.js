@@ -1,4 +1,4 @@
-import { post, get } from 'axios';
+import axios from 'axios';
 import { readFileSync } from 'fs';
 
 class FitbitService {
@@ -45,7 +45,7 @@ class FitbitService {
     }
 
     try {
-      const response = await post(`${this.baseURL}/oauth2/token`, 
+      const response = await axios.post(`${this.baseURL}/oauth2/token`, 
         new URLSearchParams({
           grant_type: 'refresh_token',
           refresh_token: tokens.refresh_token
@@ -83,7 +83,7 @@ class FitbitService {
     const accessToken = await this.ensureValidToken();
     
     try {
-      const response = await get(`${this.baseURL}${endpoint}`, {
+      const response = await axios.get(`${this.baseURL}${endpoint}`, {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Accept-Language': 'en_US' // For US units

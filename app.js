@@ -8,11 +8,19 @@ import createRootRoutes from './routes/root.js';
 import createApiRoutes from './routes/api.js';
 import createAuthRoutes from './routes/auth.js';
 import setupBackgroundSync from './services/scheduler.js';
+import https from 'https';
+import fs from 'fs';
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 80;
+const PORT = process.env.PORT || 8080;
+
+// Read TLS cert and key
+const httpsOptions = {
+  key: fs.readFileSync('server.key'),
+  cert: fs.readFileSync('server.cert')
+};
 
 let db, fitbitService, authService;
 
@@ -58,8 +66,8 @@ async function startServer() {
     setupRoutes();
     setupBackgroundSync({ fitbitService, db });
     setupGracefulShutdown();
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Server running on port ${PORT}`);
+    https.createServer(httpsOptions, app).listen(PORT, () => {
+      console.log(`HTTPS server running on https://localhost:${PORT}`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);
