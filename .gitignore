@@ -1,3 +1,6 @@
 .do/
+.env
+.scopes
+
 node_modules/
 package-lock.json
