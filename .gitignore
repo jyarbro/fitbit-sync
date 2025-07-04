@@ -1,6 +1,9 @@
 .do/
 .env
 .scopes
-
+*.db
+*.sqlite
+*.sqlite3
+*.log
 node_modules/
 package-lock.json
