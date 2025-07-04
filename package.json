@@ -1,4 +1,9 @@
 {
+  "name": "fitbit-sync",
+  "version": "0.1.0",
+  "scripts": {
+    "start": "node app.js"
+  },
   "dependencies": {
     "dotenv": "^17.0.1",
     "express": "^5.1.0"
