@@ -3,6 +3,8 @@ let currentFilter = '';
 let totalPages = 1;
 let sortColumn = 'timestamp';
 let sortDirection = 'desc';
+let selectedSamples = new Set();
+let currentSamples = [];
 
 const errorBanner = document.getElementById('error-banner');
 const errorMessage = document.getElementById('error-message');
@@ -11,6 +13,16 @@ const userNameSpan = document.getElementById('user-name');
 const generateJwtBtn = document.getElementById('generate-jwt-btn');
 const refreshFitbitBtn = document.getElementById('refresh-fitbit-btn');
 const manualSyncBtn = document.getElementById('manual-sync-btn');
+const dateSyncBtn = document.getElementById('date-sync-btn');
+const dateSyncModal = document.getElementById('date-sync-modal');
+const closeModal = document.getElementById('close-modal');
+const cancelSync = document.getElementById('cancel-sync');
+const startSync = document.getElementById('start-sync');
+const singleDateInput = document.getElementById('single-date');
+const startDateInput = document.getElementById('start-date');
+const endDateInput = document.getElementById('end-date');
+const singleDateSection = document.getElementById('single-date-section');
+const dateRangeSection = document.getElementById('date-range-section');
 const jwtDisplay = document.getElementById('jwt-display');
 const jwtToken = document.getElementById('jwt-token');
 const copyJwtBtn = document.getElementById('copy-jwt-btn');
@@ -22,6 +34,10 @@ const samplesTbody = document.getElementById('samples-tbody');
 const prevPageBtn = document.getElementById('prev-page');
 const nextPageBtn = document.getElementById('next-page');
 const pageInfo = document.getElementById('page-info');
+const selectionControls = document.getElementById('selection-controls');
+const selectAllCheckbox = document.getElementById('select-all-checkbox');
+const headerSelectAll = document.getElementById('header-select-all');
+const deleteSelectedBtn = document.getElementById('delete-selected-btn');
 
 document.addEventListener('DOMContentLoaded', async () => {
     await checkAuthStatus();
@@ -35,11 +51,35 @@ function setupEventListeners() {
     generateJwtBtn.addEventListener('click', generateJWT);
     refreshFitbitBtn.addEventListener('click', refreshFitbitTokens);
     manualSyncBtn.addEventListener('click', manualSync);
+    dateSyncBtn.addEventListener('click', openDateSyncModal);
+    closeModal.addEventListener('click', closeDateSyncModal);
+    cancelSync.addEventListener('click', closeDateSyncModal);
+    startSync.addEventListener('click', performDateSync);
     copyJwtBtn.addEventListener('click', copyJWT);
     typeFilter.addEventListener('change', onFilterChange);
     refreshSamplesBtn.addEventListener('click', () => loadSamples());
     prevPageBtn.addEventListener('click', () => changePage(currentPage - 1));
     nextPageBtn.addEventListener('click', () => changePage(currentPage + 1));
+    
+    // Selection event listeners
+    selectAllCheckbox.addEventListener('change', handleSelectAll);
+    headerSelectAll.addEventListener('change', handleSelectAll);
+    deleteSelectedBtn.addEventListener('click', deleteSelectedSamples);
+    
+    // Date sync modal event listeners
+    document.querySelectorAll('input[name="sync-type"]').forEach(radio => {
+        radio.addEventListener('change', toggleSyncType);
+    });
+    
+    // Close modal when clicking outside
+    dateSyncModal.addEventListener('click', (e) => {
+        if (e.target === dateSyncModal) {
+            closeDateSyncModal();
+        }
+    });
+    
+    // Set default dates
+    initializeDateInputs();
     
     samplesTable.querySelectorAll('th[data-sort]').forEach(th => {
         th.addEventListener('click', () => sortTable(th.dataset.sort));
@@ -237,23 +277,47 @@ function showLoading(show) {
 
 function displaySamples(samples) {
     if (!samples || samples.length === 0) {
-        samplesTbody.innerHTML = '<tr><td colspan="3">No samples found</td></tr>';
+        samplesTbody.innerHTML = '<tr><td colspan="4">No samples found</td></tr>';
+        selectionControls.classList.add('hidden');
         return;
     }
     
-    samplesTbody.innerHTML = samples.map(sample => {
+    // Store current samples for selection tracking
+    currentSamples = samples;
+    
+    // Clear previous selections when loading new data
+    selectedSamples.clear();
+    
+    samplesTbody.innerHTML = samples.map((sample, index) => {
         const timestamp = sample.timestamp || sample.startTime || 'N/A';
         const formattedTimestamp = timestamp !== 'N/A' ? 
             new Date(timestamp).toLocaleString() : 'N/A';
         
+        // Use the database ID as the unique identifier
+        const sampleId = sample.id || `fallback-${index}`;
+        
         return `
-            <tr>
+            <tr data-sample-id="${sampleId}">
+                <td>
+                    <input type="checkbox" class="sample-checkbox" data-sample-id="${sampleId}">
+                </td>
                 <td>${escapeHtml(sample.type)}</td>
                 <td>${sample.value}</td>
                 <td>${formattedTimestamp}</td>
             </tr>
         `;
     }).join('');
+    
+    // Show selection controls
+    selectionControls.classList.remove('hidden');
+    
+    // Add event listeners to checkboxes
+    document.querySelectorAll('.sample-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', handleSampleSelection);
+    });
+    
+    // Update selection state
+    updateSelectionState();
 }
 
 function updatePagination(pagination) {
@@ -328,6 +392,254 @@ function showSuccess(message) {
             successBanner.remove();
         }
     }, 5000);
+}
+
+// Date Sync Modal Functions
+function initializeDateInputs() {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    // Set default single date to yesterday (for better data availability)
+    singleDateInput.value = formatDateForInput(yesterday);
+    
+    // Set default range to last 7 days
+    const weekAgo = new Date(today);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    startDateInput.value = formatDateForInput(weekAgo);
+    endDateInput.value = formatDateForInput(yesterday);
+    
+    // Set max date to today for all inputs
+    const todayStr = formatDateForInput(today);
+    singleDateInput.max = todayStr;
+    startDateInput.max = todayStr;
+    endDateInput.max = todayStr;
+}
+
+function formatDateForInput(date) {
+    return date.toISOString().split('T')[0];
+}
+
+function openDateSyncModal() {
+    dateSyncModal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden'; // Prevent background scrolling
+}
+
+function closeDateSyncModal() {
+    dateSyncModal.classList.add('hidden');
+    document.body.style.overflow = ''; // Restore scrolling
+}
+
+function toggleSyncType() {
+    const syncType = document.querySelector('input[name="sync-type"]:checked').value;
+    
+    if (syncType === 'single') {
+        singleDateSection.classList.remove('hidden');
+        dateRangeSection.classList.add('hidden');
+    } else {
+        singleDateSection.classList.add('hidden');
+        dateRangeSection.classList.remove('hidden');
+    }
+}
+
+async function performDateSync() {
+    const syncType = document.querySelector('input[name="sync-type"]:checked').value;
+    
+    try {
+        startSync.disabled = true;
+        startSync.textContent = 'Syncing...';
+        
+        let requestBody = {};
+        let successMessage = '';
+        
+        if (syncType === 'single') {
+            const date = singleDateInput.value;
+            if (!date) {
+                showError('Please select a date');
+                return;
+            }
+            
+            requestBody.date = date;
+            successMessage = `Date sync completed for ${date}!`;
+        } else {
+            const startDate = startDateInput.value;
+            const endDate = endDateInput.value;
+            
+            if (!startDate || !endDate) {
+                showError('Please select both start and end dates');
+                return;
+            }
+            
+            if (new Date(startDate) > new Date(endDate)) {
+                showError('Start date must be before or equal to end date');
+                return;
+            }
+            
+            // Calculate days difference
+            const daysDiff = Math.ceil((new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24)) + 1;
+            if (daysDiff > 30) {
+                showError('Date range too large. Maximum 30 days allowed.');
+                return;
+            }
+            
+            requestBody.startDate = startDate;
+            requestBody.endDate = endDate;
+            successMessage = `Date range sync completed for ${startDate} to ${endDate}! (${daysDiff} days)`;
+        }
+        
+        const data = await apiCall('/api/sync/trigger', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        });
+        
+        closeDateSyncModal();
+        
+        // Show detailed success message
+        if (data.results && data.results.totalSamples !== undefined) {
+            successMessage += ` ${data.results.totalSamples} total samples processed.`;
+        } else if (data.results) {
+            const syncCount = Object.keys(data.results).length;
+            successMessage += ` ${syncCount} data types synced.`;
+        }
+        
+        showSuccess(successMessage);
+        
+        // Refresh the samples table to show new data
+        await loadSamples();
+        
+    } catch (error) {
+        showError('Failed to perform date sync: ' + error.message);
+    } finally {
+        startSync.disabled = false;
+        startSync.textContent = 'Start Sync';
+    }
+}
+
+// Selection Functions
+function handleSampleSelection(event) {
+    const sampleId = event.target.dataset.sampleId;
+    const row = event.target.closest('tr');
+    
+    if (event.target.checked) {
+        selectedSamples.add(sampleId);
+        row.classList.add('selected');
+    } else {
+        selectedSamples.delete(sampleId);
+        row.classList.remove('selected');
+    }
+    
+    updateSelectionState();
+}
+
+function handleSelectAll(event) {
+    const isChecked = event.target.checked;
+    
+    // Update both checkboxes to stay in sync
+    selectAllCheckbox.checked = isChecked;
+    headerSelectAll.checked = isChecked;
+    
+    // Select/deselect all sample checkboxes
+    document.querySelectorAll('.sample-checkbox').forEach(checkbox => {
+        checkbox.checked = isChecked;
+        const sampleId = checkbox.dataset.sampleId;
+        const row = checkbox.closest('tr');
+        
+        if (isChecked) {
+            selectedSamples.add(sampleId);
+            row.classList.add('selected');
+        } else {
+            selectedSamples.delete(sampleId);
+            row.classList.remove('selected');
+        }
+    });
+    
+    updateSelectionState();
+}
+
+function updateSelectionState() {
+    const totalSamples = document.querySelectorAll('.sample-checkbox').length;
+    const selectedCount = selectedSamples.size;
+    
+    // Update select all checkboxes
+    const allSelected = selectedCount > 0 && selectedCount === totalSamples;
+    const someSelected = selectedCount > 0 && selectedCount < totalSamples;
+    
+    selectAllCheckbox.checked = allSelected;
+    selectAllCheckbox.indeterminate = someSelected;
+    headerSelectAll.checked = allSelected;
+    headerSelectAll.indeterminate = someSelected;
+    
+    // Show/hide delete button
+    if (selectedCount > 0) {
+        deleteSelectedBtn.classList.remove('hidden');
+        deleteSelectedBtn.textContent = `Delete Selected (${selectedCount})`;
+    } else {
+        deleteSelectedBtn.classList.add('hidden');
+    }
+}
+
+async function deleteSelectedSamples() {
+    if (selectedSamples.size === 0) {
+        showError('No samples selected for deletion');
+        return;
+    }
+    
+    // Show confirmation dialog
+    const confirmMessage = `Are you sure you want to delete ${selectedSamples.size} selected sample(s)? This action cannot be undone.`;
+    if (!confirm(confirmMessage)) {
+        return;
+    }
+    
+    try {
+        deleteSelectedBtn.disabled = true;
+        deleteSelectedBtn.textContent = 'Deleting...';
+        
+        // Get the actual sample data for selected items using database IDs
+        const samplesToDelete = [];
+        selectedSamples.forEach(sampleId => {
+            // Find the sample by its database ID
+            const sample = currentSamples.find(s => s.id == sampleId);
+            if (sample) {
+                samplesToDelete.push(sample);
+            } else {
+                console.warn(`Sample with ID ${sampleId} not found in current samples`);
+            }
+        });
+        
+        if (samplesToDelete.length === 0) {
+            showError('No valid samples found for deletion');
+            return;
+        }
+        
+        console.log('Samples to delete:', samplesToDelete);
+        
+        // Send DELETE request to the API
+        const response = await apiCall('/api/samples', {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ samples: samplesToDelete })
+        });
+        
+        console.log('Delete response:', response);
+        
+        showSuccess(`Successfully deleted ${response.deletedCount} samples using ${response.method}`);
+        
+        // Clear selections and refresh the table
+        selectedSamples.clear();
+        await loadSamples();
+        
+    } catch (error) {
+        console.error('Delete error:', error);
+        showError('Failed to delete samples: ' + error.message);
+    } finally {
+        deleteSelectedBtn.disabled = false;
+        updateSelectionState();
+    }
 }
 
 // Handle browser back/forward

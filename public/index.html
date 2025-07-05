@@ -28,7 +28,53 @@
             <button id="generate-jwt-btn" class="btn btn-primary">Generate New JWT</button>
             <button id="refresh-fitbit-btn" class="btn btn-primary">Refresh Fitbit Tokens</button>
             <button id="manual-sync-btn" class="btn btn-primary">Manual Sync</button>
+            <button id="date-sync-btn" class="btn btn-primary">Date Sync</button>
         </section>
+
+        <!-- Date Sync Modal -->
+        <div id="date-sync-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Sync Specific Date(s)</h3>
+                    <button id="close-modal" class="close-btn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="sync-options">
+                        <label class="radio-option">
+                            <input type="radio" name="sync-type" value="single" checked>
+                            <span>Single Date</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="sync-type" value="range">
+                            <span>Date Range</span>
+                        </label>
+                    </div>
+                    
+                    <div id="single-date-section" class="date-section">
+                        <label for="single-date">Select Date:</label>
+                        <input type="date" id="single-date" class="date-input">
+                    </div>
+                    
+                    <div id="date-range-section" class="date-section hidden">
+                        <div class="date-range-inputs">
+                            <div>
+                                <label for="start-date">Start Date:</label>
+                                <input type="date" id="start-date" class="date-input">
+                            </div>
+                            <div>
+                                <label for="end-date">End Date:</label>
+                                <input type="date" id="end-date" class="date-input">
+                            </div>
+                        </div>
+                        <p class="date-range-info">Maximum 30 days allowed</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="cancel-sync" class="btn btn-secondary">Cancel</button>
+                    <button id="start-sync" class="btn btn-primary">Start Sync</button>
+                </div>
+            </div>
+        </div>
 
         <!-- JWT Display -->
         <div id="jwt-display" class="jwt-display hidden">
@@ -56,11 +102,23 @@
             <!-- Loading indicator -->
             <div id="loading" class="loading hidden">Loading samples...</div>
 
+            <!-- Selection Controls -->
+            <div class="selection-controls hidden" id="selection-controls">
+                <label class="select-all-container">
+                    <input type="checkbox" id="select-all-checkbox">
+                    <span>Select All</span>
+                </label>
+                <button id="delete-selected-btn" class="btn btn-danger hidden">Delete Selected</button>
+            </div>
+
             <!-- Samples Table -->
             <div class="table-container">
                 <table id="samples-table" class="samples-table">
                     <thead>
                         <tr>
+                            <th class="checkbox-column">
+                                <input type="checkbox" id="header-select-all">
+                            </th>
                             <th data-sort="type">Type</th>
                             <th data-sort="value">Value</th>
                             <th data-sort="timestamp">Timestamp</th>

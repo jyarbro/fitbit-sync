@@ -71,10 +71,27 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
 
   router.post('/sync/trigger', async (req, res) => {
     try {
-      console.log('Manual sync triggered');
-      const results = await fitbitService.syncAllData();
+      const { date, startDate, endDate } = req.body;
+      
+      let results;
+      let message;
+      
+      if (startDate && endDate) {
+        console.log(`Manual date range sync triggered: ${startDate} to ${endDate}`);
+        results = await fitbitService.syncDateRange(startDate, endDate);
+        message = `Date range sync completed for ${startDate} to ${endDate}`;
+      } else if (date) {
+        console.log(`Manual date sync triggered for: ${date}`);
+        results = await fitbitService.syncAllData(date);
+        message = `Date sync completed for ${date}`;
+      } else {
+        console.log('Manual sync triggered');
+        results = await fitbitService.syncAllData();
+        message = 'Manual sync completed';
+      }
+      
       res.json({
-        message: 'Manual sync completed',
+        message,
         results,
         timestamp: new Date().toISOString(),
       });
@@ -128,6 +145,133 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
       });
     } catch (error) {
       console.error('Status error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete selected samples
+  router.delete('/samples', async (req, res) => {
+    try {
+      const { samples } = req.body;
+      
+      if (!samples || !Array.isArray(samples) || samples.length === 0) {
+        return res.status(400).json({ error: 'No samples provided for deletion' });
+      }
+
+      console.log('Received samples for deletion:', JSON.stringify(samples, null, 2));
+
+      // Check if we have IDs for all samples - prefer ID-based deletion
+      const sampleIds = samples.map(s => s.id).filter(id => id !== undefined && id !== null);
+      
+      let deletedCount;
+      
+      if (sampleIds.length === samples.length) {
+        // All samples have IDs, use ID-based deletion (more reliable)
+        console.log(`Deleting ${sampleIds.length} samples by ID: [${sampleIds.join(', ')}]`);
+        deletedCount = await db.deleteSamplesByIds(sampleIds);
+      } else {
+        // Fallback to field-based deletion
+        console.log(`Deleting ${samples.length} samples by field matching`);
+        
+        // Validate sample data for field-based deletion
+        for (const sample of samples) {
+          if (!sample.type || (sample.value === undefined || sample.value === null)) {
+            return res.status(400).json({ error: 'Invalid sample data: type and value are required' });
+          }
+        }
+        
+        deletedCount = await db.deleteSamples(samples);
+      }
+      
+      console.log(`Successfully deleted ${deletedCount} samples`);
+      
+      res.json({
+        message: `Successfully deleted ${deletedCount} samples`,
+        deletedCount,
+        method: sampleIds.length === samples.length ? 'by-id' : 'by-fields',
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Delete samples error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete samples by IDs
+  router.delete('/samples/ids', async (req, res) => {
+    try {
+      const { ids } = req.body;
+      
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: 'No sample IDs provided for deletion' });
+      }
+
+      // Validate IDs are numbers
+      const validIds = ids.filter(id => Number.isInteger(id) && id > 0);
+      if (validIds.length === 0) {
+        return res.status(400).json({ error: 'No valid sample IDs provided' });
+      }
+
+      console.log(`Deleting samples with IDs: ${validIds.join(', ')}`);
+      const deletedCount = await db.deleteSamplesByIds(validIds);
+      
+      res.json({
+        message: `Successfully deleted ${deletedCount} samples`,
+        deletedCount,
+        requestedIds: validIds,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Delete samples by IDs error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete all samples of a specific type
+  router.delete('/samples/type/:type', async (req, res) => {
+    try {
+      const { type } = req.params;
+      
+      if (!type || typeof type !== 'string') {
+        return res.status(400).json({ error: 'Invalid sample type provided' });
+      }
+
+      console.log(`Deleting all samples of type: ${type}`);
+      const deletedCount = await db.deleteSamplesByType(type);
+      
+      res.json({
+        message: `Successfully deleted ${deletedCount} samples of type '${type}'`,
+        deletedCount,
+        type,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Delete samples by type error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete all samples (with confirmation)
+  router.delete('/samples/all', async (req, res) => {
+    try {
+      const { confirm } = req.body;
+      
+      if (confirm !== 'DELETE_ALL_SAMPLES') {
+        return res.status(400).json({ 
+          error: 'Confirmation required. Send { "confirm": "DELETE_ALL_SAMPLES" } to proceed.' 
+        });
+      }
+
+      console.log('Deleting all samples');
+      const deletedCount = await db.deleteAllSamples();
+      
+      res.json({
+        message: `Successfully deleted all ${deletedCount} samples`,
+        deletedCount,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Delete all samples error:', error);
       res.status(500).json({ error: error.message });
     }
   });

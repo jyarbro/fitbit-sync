@@ -286,7 +286,7 @@ class Database {
 
     // Get samples with pagination
     const dataQuery = `
-      SELECT type, value, timestamp, start_time as startTime, end_time as endTime, created_at
+      SELECT id, type, value, timestamp, start_time as startTime, end_time as endTime, created_at
       FROM samples 
       ${whereClause}
       ORDER BY ${sortColumn} ${sortDirection.toUpperCase()}
@@ -303,6 +303,7 @@ class Database {
           // Clean up null values for frontend
           const cleanedRows = rows.map(row => {
             const cleaned = { 
+              id: row.id,
               type: row.type, 
               value: row.value,
               created_at: row.created_at
@@ -344,6 +345,108 @@ class Database {
           }
         }
       );
+    });
+  }
+
+  async deleteSamples(samples) {
+    if (!samples || samples.length === 0) {
+      return 0;
+    }
+
+    // Build WHERE conditions for each sample to delete
+    const conditions = samples.map(sample => {
+      const conditions = ['type = ?'];
+      const params = [sample.type];
+      
+      if (sample.value !== undefined && sample.value !== null) {
+        conditions.push('value = ?');
+        params.push(sample.value);
+      }
+      
+      if (sample.timestamp) {
+        conditions.push('timestamp = ?');
+        params.push(sample.timestamp);
+      } else if (sample.startTime) {
+        conditions.push('start_time = ?');
+        params.push(sample.startTime);
+      }
+      
+      if (sample.endTime) {
+        conditions.push('end_time = ?');
+        params.push(sample.endTime);
+      }
+      
+      return { condition: `(${conditions.join(' AND ')})`, params };
+    });
+
+    const whereClause = conditions.map(c => c.condition).join(' OR ');
+    const allParams = conditions.flatMap(c => c.params);
+    
+    const query = `DELETE FROM samples WHERE ${whereClause}`;
+
+    return new Promise((resolve, reject) => {
+      this.db.run(query, allParams, function(err) {
+        if (err) {
+          console.error('Error deleting samples:', err);
+          reject(err);
+        } else {
+          console.log(`Deleted ${this.changes} samples`);
+          resolve(this.changes);
+        }
+      });
+    });
+  }
+
+  async deleteSamplesByIds(sampleIds) {
+    if (!sampleIds || sampleIds.length === 0) {
+      return 0;
+    }
+
+    const placeholders = sampleIds.map(() => '?').join(',');
+    const query = `DELETE FROM samples WHERE id IN (${placeholders})`;
+
+    return new Promise((resolve, reject) => {
+      this.db.run(query, sampleIds, function(err) {
+        if (err) {
+          console.error('Error deleting samples by IDs:', err);
+          reject(err);
+        } else {
+          console.log(`Deleted ${this.changes} samples by ID`);
+          resolve(this.changes);
+        }
+      });
+    });
+  }
+
+  async deleteSamplesByType(sampleType) {
+    return new Promise((resolve, reject) => {
+      this.db.run(
+        'DELETE FROM samples WHERE type = ?',
+        [sampleType],
+        function(err) {
+          if (err) {
+            console.error('Error deleting samples by type:', err);
+            reject(err);
+          } else {
+            console.log(`Deleted ${this.changes} samples of type ${sampleType}`);
+            resolve(this.changes);
+          }
+        }
+      );
+    });
+  }
+
+  async deleteAllSamples() {
+    return new Promise((resolve, reject) => {
+      this.db.run('DELETE FROM samples', function(err) {
+        if (err) {
+          console.error('Error deleting all samples:', err);
+          reject(err);
+        } else {
+          console.log(`Deleted all ${this.changes} samples`);
+          resolve(this.changes);
+        }
+      });
     });
   }
 

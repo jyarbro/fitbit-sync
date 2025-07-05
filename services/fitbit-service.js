@@ -71,6 +71,13 @@ class FitbitService {
     }
   }
 
+  getLocalDateString(date = new Date()) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
   extractRateLimitInfo(response) {
     return {
       remaining: parseInt(response.headers['fitbit-rate-limit-remaining']) || 0,
@@ -117,18 +124,18 @@ class FitbitService {
     }
   }
 
-  async syncActivityData() {
+  async syncActivityData(dateStr = null) {
     console.log('Syncing activity data...');
     const samples = [];
     const now = new Date();
-    const today = now.toISOString().split('T')[0];
+    const today = dateStr || this.getLocalDateString(now);
     
     try {
       const stepsResponse = await this.makeAPIRequest(
         `/1/user/-/activities/steps/date/${today}/1d/1min.json`
       );
 
-      const stepsSamples = this.processStepsData(stepsResponse.data['activities-steps-intraday'].dataset);
+      const stepsSamples = this.processStepsData(stepsResponse.data['activities-steps-intraday'].dataset, today);
       
       samples.push(...stepsSamples);
 
@@ -175,7 +182,7 @@ class FitbitService {
     }
   }
 
-  processStepsData(dataset) {
+  processStepsData(dataset, dateStr) {
     const samples = [];
     let currentBlock = null;
     const maxBlockMinutes = 15;
@@ -184,7 +191,7 @@ class FitbitService {
     for (let i = 0; i < dataset.length; i++) {
       const dataPoint = dataset[i];
       const steps = parseInt(dataPoint.value);
-      const timestamp = new Date(`${new Date().toISOString().split('T')[0]}T${dataPoint.time}`);
+      const timestamp = new Date(`${dateStr}T${dataPoint.time}`);
       
       if (steps > 0) {
         if (!currentBlock) {
@@ -277,11 +284,11 @@ class FitbitService {
     return samples;
   }
 
-  async syncHeartRateData() {
+  async syncHeartRateData(dateStr = null) {
     console.log('Syncing heart rate data...');
     const samples = [];
     const now = new Date();
-    const today = now.toISOString().split('T')[0];
+    const today = dateStr || this.getLocalDateString(now);
     
     try {
       const response = await this.makeAPIRequest(
@@ -327,17 +334,23 @@ class FitbitService {
     }
   }
 
-  async syncSleepData() {
+  async syncSleepData(dateStr = null) {
     console.log('Syncing sleep data...');
     const samples = [];
     const now = new Date();
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const dateStr = yesterday.toISOString().split('T')[0];
+    let targetDate;
+    
+    if (dateStr) {
+      targetDate = dateStr;
+    } else {
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      targetDate = this.getLocalDateString(yesterday);
+    }
     
     try {
       const response = await this.makeAPIRequest(
-        `/1.2/user/-/sleep/date/${dateStr}.json`
+        `/1.2/user/-/sleep/date/${targetDate}.json`
       );
       
       const sleepLogs = response.data.sleep || [];
@@ -393,11 +406,11 @@ class FitbitService {
     }
   }
 
-  async syncOtherData() {
+  async syncOtherData(dateStr = null) {
     console.log('Syncing other health data...');
     const samples = [];
     const now = new Date();
-    const today = now.toISOString().split('T')[0];
+    const today = dateStr || this.getLocalDateString(now);
     
     try {
       if (this.scopes.includes('oxygen_saturation')) {
@@ -486,7 +499,7 @@ class FitbitService {
     }
   }
 
-  async syncAllData() {
+  async syncAllData(dateStr = null) {
     console.log('Starting full data sync...');
     const results = {};
     
@@ -500,19 +513,19 @@ class FitbitService {
 
       // Sync each data type
       if (this.scopes.includes('activity')) {
-        results.activity = await this.syncActivityData();
+        results.activity = await this.syncActivityData(dateStr);
       }
       
       if (this.scopes.includes('heartrate')) {
-        results.heartrate = await this.syncHeartRateData();
+        results.heartrate = await this.syncHeartRateData(dateStr);
       }
       
       if (this.scopes.includes('sleep')) {
-        results.sleep = await this.syncSleepData();
+        results.sleep = await this.syncSleepData(dateStr);
       }
       
       // Sync other health data
-      results.other = await this.syncOtherData();
+      results.other = await this.syncOtherData(dateStr);
       
       console.log('Full sync completed:', results);
       return results;
@@ -520,6 +533,87 @@ class FitbitService {
       console.error('Sync failed:', error.message);
       throw error;
     }
+  }
+
+  async syncDateRange(startDate, endDate) {
+    console.log(`Starting date range sync from ${startDate} to ${endDate}...`);
+    const results = {};
+    const dates = this.getDateRange(startDate, endDate);
+    
+    try {
+      // Check rate limit before starting
+      const rateLimitStatus = await this.db.getRateLimitStatus();
+      const requiredRequests = dates.length * 4; // Approximate requests per date
+
+      if (rateLimitStatus.rate_limit_remaining < requiredRequests) {
+        throw new Error(`Rate limit too low: ${rateLimitStatus.rate_limit_remaining} requests remaining, need approximately ${requiredRequests}`);
+      }
+
+      let totalSamples = 0;
+      
+      for (const dateStr of dates) {
+        console.log(`Syncing data for ${dateStr}...`);
+        
+        const dayResults = {};
+        
+        // Sync each data type for this date
+        if (this.scopes.includes('activity')) {
+          dayResults.activity = await this.syncActivityData(dateStr);
+          totalSamples += dayResults.activity;
+        }
+        
+        if (this.scopes.includes('heartrate')) {
+          dayResults.heartrate = await this.syncHeartRateData(dateStr);
+          totalSamples += dayResults.heartrate;
+        }
+        
+        if (this.scopes.includes('sleep')) {
+          dayResults.sleep = await this.syncSleepData(dateStr);
+          totalSamples += dayResults.sleep;
+        }
+        
+        dayResults.other = await this.syncOtherData(dateStr);
+        totalSamples += dayResults.other;
+        
+        results[dateStr] = dayResults;
+        
+        // Small delay to avoid hitting rate limits
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      console.log(`Date range sync completed: ${totalSamples} total samples processed across ${dates.length} days`);
+      return { results, totalSamples, datesProcessed: dates.length };
+    } catch (error) {
+      console.error('Date range sync failed:', error.message);
+      throw error;
+    }
+  }
+
+  getDateRange(startDate, endDate) {
+    const dates = [];
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    // Validate dates
+    if (start > end) {
+      throw new Error('Start date must be before or equal to end date');
+    }
+    
+    // Limit to prevent excessive API calls
+    const maxDays = 30;
+    const daysDiff = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+    
+    if (daysDiff > maxDays) {
+      throw new Error(`Date range too large. Maximum ${maxDays} days allowed, requested ${daysDiff} days`);
+    }
+    
+    const current = new Date(start);
+    while (current <= end) {
+      dates.push(this.getLocalDateString(current));
+      current.setDate(current.getDate() + 1);
+    }
+    
+    return dates;
   }
 }
 
