@@ -1,7 +1,6 @@
 .do/
 .vscode/
 .env
-.scopes
 *.db
 *.sqlite
 *.sqlite3

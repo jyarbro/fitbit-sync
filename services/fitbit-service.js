@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { readFileSync } from 'fs';
 
 class FitbitService {
   constructor(database) {
@@ -10,11 +9,17 @@ class FitbitService {
 
   loadScopes() {
     try {
-      const scopesContent = readFileSync('.scopes', 'utf8');
-      return scopesContent
-        .split('\n')
-        .filter(line => line.trim() && !line.startsWith('#'))
-        .map(line => line.trim());
+      const scopesEnv = process.env.FITBIT_SCOPES;
+      if (scopesEnv) {
+        return scopesEnv
+          .split(' ')
+          .filter(scope => scope.trim())
+          .map(scope => scope.trim());
+      }
+      
+      // Fallback to default scopes if environment variable is not set
+      console.warn('FITBIT_SCOPES environment variable not set, using default scopes');
+      return ['activity', 'heartrate', 'sleep'];
     } catch (error) {
       console.error('Error loading scopes:', error);
       return ['activity', 'heartrate', 'sleep']; // fallback

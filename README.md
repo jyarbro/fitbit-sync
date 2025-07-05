@@ -17,7 +17,7 @@ A Node.js application that syncs Fitbit data and serves it to iOS Shortcuts with
 
 ## Supported Fitbit Data
 
-Based on your `.scopes` file:
+Based on your `FITBIT_SCOPES` environment variable:
 - ✅ Activity (steps, calories, distance)
 - ✅ Heart Rate (continuous monitoring)
 - ✅ Sleep (detailed stage analysis)
@@ -88,17 +88,20 @@ npm install
 
 ### 3. Configure Fitbit Scopes
 
-Edit `.scopes` file to enable/disable data types:
-```
-activity
-heartrate
-sleep
-oxygen_saturation
-respiratory_rate
-temperature
+Set the `FITBIT_SCOPES` environment variable in your `.env` file to specify which data types to sync (space-delimited):
+```bash
+FITBIT_SCOPES=activity heartrate sleep oxygen_saturation respiratory_rate temperature
 ```
 
-Comment out lines with `#` to disable specific scopes.
+Available scopes:
+- `activity` - Activity data (steps, distance, calories, etc.)
+- `heartrate` - Heart rate data
+- `sleep` - Sleep data
+- `oxygen_saturation` - SpO2 data
+- `respiratory_rate` - Respiratory rate data
+- `temperature` - Temperature data
+
+Remove any scopes you don't want to sync from the space-delimited list.
 
 ### 4. Generate a Self-Signed TLS Certificate (for local HTTPS)
 
