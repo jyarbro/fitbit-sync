@@ -149,7 +149,7 @@ async function startServer() {
       // Development: Use HTTPS with self-signed certificates
       if (httpsOptions) {
         https.createServer(httpsOptions, app).listen(PORT, () => {
-          console.log(`HTTPS server running on https://localhost:${PORT}`);
+          console.log(`HTTPS server running`);
         });
       } else {
         console.error('ERROR: HTTPS certificates are required for development but could not be loaded.');
@@ -157,9 +157,9 @@ async function startServer() {
         process.exit(1);
       }
     } else {
-      // Production: Use HTTPS with Digital Ocean managed certificates
+      // Production: Use HTTPS with managed certificates
       https.createServer(app).listen(PORT, () => {
-        console.log(`HTTPS server running on port ${PORT} (certificates managed by Digital Ocean)`);
+        console.log(`HTTPS server running on port ${PORT}`);
       });
     }
   } catch (error) {
