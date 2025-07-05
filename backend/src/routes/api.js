@@ -9,16 +9,24 @@ import express from 'express';
  * @param {object} params
  * @param {object} params.db
  * @param {object} params.fitbitService
- * @param {object} params.authService
+ * @param {object} params.authFrontendService - JWT authentication service
+ * @param {object} params.validationMiddleware - Validation middleware service
+ * @param {object} params.errorMiddleware - Error handling middleware service
  * @returns {express.Router}
  */
-export default function createApiRoutes({ db, fitbitService, authService }) {
+export default function createApiRoutes({ 
+  db, 
+  fitbitService, 
+  authFrontendService, 
+  validationMiddleware, 
+  errorMiddleware 
+}) {
   const router = express.Router();
 
   router.use((req, res, next) => {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
-      return authService.verifyJWTMiddleware()(req, res, next);
+      return authFrontendService.verifyJWTMiddleware()(req, res, next);
     }
     if (req.session?.user?.authenticated) {
       const sessionUser = req.session.user;
@@ -37,7 +45,7 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
     return res.status(401).json({ error: 'Authentication required - provide JWT token or valid session' });
   });
 
-  router.use(authService.errorHandler());
+  router.use(errorMiddleware.errorHandler());
 
   router.get('/samples', async (req, res) => {
     try {
@@ -65,7 +73,7 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
     }
   });
 
-  router.post('/sync', authService.validateSyncRequest(), async (req, res) => {
+  router.post('/sync', validationMiddleware.validateSyncRequest(), async (req, res) => {
     try {
       const { lastSyncTimestamp } = req.body;
       console.log(`Sync request received. Last sync: ${lastSyncTimestamp}`);

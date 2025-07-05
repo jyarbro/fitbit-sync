@@ -5,11 +5,13 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import Database from './services/database.js';
 import FitbitService from './services/fitbit-service.js';
-import AuthService from './services/auth.js';
+import AuthOrchestrator from './auth/orchestrator.js';
+import SecurityMiddleware from './middleware/security.js';
+import ValidationMiddleware from './middleware/validation.js';
+import ErrorMiddleware from './middleware/error.js';
 import createHealthRoutes from './routes/health.js';
 import createRootRoutes from './routes/root.js';
 import createApiRoutes from './routes/api.js';
-import createAuthRoutes from './routes/auth.js';
 import setupBackgroundSync from './services/scheduler.js';
 import https from 'https';
 import fs from 'fs';
@@ -79,17 +81,21 @@ if (isDevelopment) {
   }
 }
 
-let db, fitbitService, authService;
+let db, fitbitService, authOrchestrator, securityMiddleware, validationMiddleware, errorMiddleware;
 
 // Initialize database and services
 async function initializeServices() {
   db = new Database();
   await db.initialize();
   fitbitService = new FitbitService(db);
-  authService = new AuthService();
-  app.use(authService.blockSensitiveFiles());
-  app.use(authService.corsMiddleware());
-  app.use(authService.createRateLimiter());
+  authOrchestrator = new AuthOrchestrator();
+  securityMiddleware = new SecurityMiddleware();
+  validationMiddleware = new ValidationMiddleware();
+  errorMiddleware = new ErrorMiddleware();
+  
+  app.use(securityMiddleware.blockSensitiveFiles());
+  app.use(securityMiddleware.corsMiddleware());
+  app.use(securityMiddleware.createRateLimiter());
 }
 
 app.use(json());
@@ -127,8 +133,14 @@ app.use('/src', express.static(path.join(__dirname, '../../frontend/src')));
 function setupRoutes() {
   app.use('/', createRootRoutes());
   app.use('/health', createHealthRoutes());
-  app.use('/auth', createAuthRoutes({ fitbitService, authService, db }));
-  app.use('/api', createApiRoutes({ db, fitbitService, authService }));
+  app.use('/auth', authOrchestrator.createRoutes({ fitbitService, db }));
+  app.use('/api', createApiRoutes({ 
+    db, 
+    fitbitService, 
+    authFrontendService: authOrchestrator.getFrontendService(),
+    validationMiddleware,
+    errorMiddleware
+  }));
 }
 
 // Handle graceful shutdown
