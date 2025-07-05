@@ -22,11 +22,5 @@ export default function createRootRoutes() {
     res.sendFile(path.join(__dirname, '../public/index.html'));
   });
 
-  // Test response for root route
-  router.get('/', (req, res) => {
-    console.log('Root route hit'); // Log when the root route is accessed
-    res.send('Root route is working'); // Test response
-  });
-
   return router;
 }
