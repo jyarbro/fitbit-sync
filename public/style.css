@@ -483,6 +483,33 @@ body {
     margin: 0;
 }
 
+.sample-type-section {
+    margin-bottom: 20px;
+}
+
+.sample-type-section label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    color: #333;
+}
+
+.sample-type-select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    background-color: white;
+    cursor: pointer;
+}
+
+.sample-type-select:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
 .date-section {
     margin-bottom: 20px;
 }

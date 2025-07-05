@@ -12,12 +12,12 @@ const closeError = document.getElementById('close-error');
 const userNameSpan = document.getElementById('user-name');
 const generateJwtBtn = document.getElementById('generate-jwt-btn');
 const refreshFitbitBtn = document.getElementById('refresh-fitbit-btn');
-const manualSyncBtn = document.getElementById('manual-sync-btn');
 const dateSyncBtn = document.getElementById('date-sync-btn');
 const dateSyncModal = document.getElementById('date-sync-modal');
 const closeModal = document.getElementById('close-modal');
 const cancelSync = document.getElementById('cancel-sync');
 const startSync = document.getElementById('start-sync');
+const sampleTypeSelect = document.getElementById('sample-type-select');
 const singleDateInput = document.getElementById('single-date');
 const startDateInput = document.getElementById('start-date');
 const endDateInput = document.getElementById('end-date');
@@ -50,7 +50,6 @@ function setupEventListeners() {
     closeError.addEventListener('click', hideError);
     generateJwtBtn.addEventListener('click', generateJWT);
     refreshFitbitBtn.addEventListener('click', refreshFitbitTokens);
-    manualSyncBtn.addEventListener('click', manualSync);
     dateSyncBtn.addEventListener('click', openDateSyncModal);
     closeModal.addEventListener('click', closeDateSyncModal);
     cancelSync.addEventListener('click', closeDateSyncModal);
@@ -183,38 +182,6 @@ async function refreshFitbitTokens() {
     }
 }
 
-async function manualSync() {
-    try {
-        manualSyncBtn.disabled = true;
-        manualSyncBtn.textContent = 'Syncing...';
-        
-        const data = await apiCall('/api/sync/trigger', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        showSuccess(`Manual sync completed! ${data.results ? Object.keys(data.results).length : 0} data types synced.`);
-        
-        // Refresh the samples table to show new data
-        await loadSamples();
-        
-    } catch (error) {
-        // Show detailed error information
-        let errorMsg = 'Failed to perform manual sync: ' + error.message;
-        
-        // Check if we have additional error details from the response
-        if (error.response) {
-            console.error('HTTP Error Response:', error.response);
-        }
-        
-        showError(errorMsg);
-    } finally {
-        manualSyncBtn.disabled = false;
-        manualSyncBtn.textContent = 'Manual Sync';
-    }
-}
 
 async function loadSampleTypes() {
     try {
@@ -444,6 +411,7 @@ function toggleSyncType() {
 
 async function performDateSync() {
     const syncType = document.querySelector('input[name="sync-type"]:checked').value;
+    const selectedSampleType = sampleTypeSelect.value;
     
     try {
         startSync.disabled = true;
@@ -451,6 +419,11 @@ async function performDateSync() {
         
         let requestBody = {};
         let successMessage = '';
+        
+        // Add sample type selection to request body
+        if (selectedSampleType && selectedSampleType !== 'all') {
+            requestBody.sampleTypes = [selectedSampleType];
+        }
         
         if (syncType === 'single') {
             const date = singleDateInput.value;
@@ -460,7 +433,8 @@ async function performDateSync() {
             }
             
             requestBody.date = date;
-            successMessage = `Date sync completed for ${date}!`;
+            const sampleTypeText = selectedSampleType === 'all' ? 'all sample types' : selectedSampleType;
+            successMessage = `Date sync completed for ${date} (${sampleTypeText})!`;
         } else {
             const startDate = startDateInput.value;
             const endDate = endDateInput.value;
@@ -484,7 +458,8 @@ async function performDateSync() {
             
             requestBody.startDate = startDate;
             requestBody.endDate = endDate;
-            successMessage = `Date range sync completed for ${startDate} to ${endDate}! (${daysDiff} days)`;
+            const sampleTypeText = selectedSampleType === 'all' ? 'all sample types' : selectedSampleType;
+            successMessage = `Date range sync completed for ${startDate} to ${endDate} (${sampleTypeText})! (${daysDiff} days)`;
         }
         
         const data = await apiCall('/api/sync/trigger', {

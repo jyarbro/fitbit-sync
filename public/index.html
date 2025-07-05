@@ -27,8 +27,7 @@
         <section class="actions">
             <button id="generate-jwt-btn" class="btn btn-primary">Generate New JWT</button>
             <button id="refresh-fitbit-btn" class="btn btn-primary">Refresh Fitbit Tokens</button>
-            <button id="manual-sync-btn" class="btn btn-primary">Manual Sync</button>
-            <button id="date-sync-btn" class="btn btn-primary">Date Sync</button>
+            <button id="date-sync-btn" class="btn btn-primary">Manual Sync</button>
         </section>
 
         <!-- Date Sync Modal -->
@@ -48,6 +47,17 @@
                             <input type="radio" name="sync-type" value="range">
                             <span>Date Range</span>
                         </label>
+                    </div>
+                    
+                    <div class="sample-type-section">
+                        <label for="sample-type-select">Sample Types to Sync:</label>
+                        <select id="sample-type-select" class="sample-type-select">
+                            <option value="all">All Sample Types</option>
+                            <option value="activity">Activity (Steps & Calories)</option>
+                            <option value="heartrate">Heart Rate</option>
+                            <option value="sleep">Sleep Analysis</option>
+                            <option value="other">Other Health Data</option>
+                        </select>
                     </div>
                     
                     <div id="single-date-section" class="date-section">

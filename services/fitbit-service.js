@@ -499,7 +499,7 @@ class FitbitService {
     }
   }
 
-  async syncAllData(dateStr = null) {
+  async syncAllData(dateStr = null, sampleTypes = null) {
     console.log('Starting full data sync...');
     const results = {};
     
@@ -511,21 +511,29 @@ class FitbitService {
         throw new Error(`Rate limit too low: ${rateLimitStatus.rate_limit_remaining} requests remaining`);
       }
 
-      // Sync each data type
-      if (this.scopes.includes('activity')) {
+      // Determine which data types to sync
+      const shouldSyncActivity = !sampleTypes || sampleTypes.includes('activity');
+      const shouldSyncHeartrate = !sampleTypes || sampleTypes.includes('heartrate');
+      const shouldSyncSleep = !sampleTypes || sampleTypes.includes('sleep');
+      const shouldSyncOther = !sampleTypes || sampleTypes.includes('other');
+
+      // Sync each data type based on selection
+      if (shouldSyncActivity && this.scopes.includes('activity')) {
         results.activity = await this.syncActivityData(dateStr);
       }
       
-      if (this.scopes.includes('heartrate')) {
+      if (shouldSyncHeartrate && this.scopes.includes('heartrate')) {
         results.heartrate = await this.syncHeartRateData(dateStr);
       }
       
-      if (this.scopes.includes('sleep')) {
+      if (shouldSyncSleep && this.scopes.includes('sleep')) {
         results.sleep = await this.syncSleepData(dateStr);
       }
       
       // Sync other health data
-      results.other = await this.syncOtherData(dateStr);
+      if (shouldSyncOther) {
+        results.other = await this.syncOtherData(dateStr);
+      }
       
       console.log('Full sync completed:', results);
       return results;
@@ -535,7 +543,7 @@ class FitbitService {
     }
   }
 
-  async syncDateRange(startDate, endDate) {
+  async syncDateRange(startDate, endDate, sampleTypes = null) {
     console.log(`Starting date range sync from ${startDate} to ${endDate}...`);
     const results = {};
     const dates = this.getDateRange(startDate, endDate);
@@ -549,6 +557,12 @@ class FitbitService {
         throw new Error(`Rate limit too low: ${rateLimitStatus.rate_limit_remaining} requests remaining, need approximately ${requiredRequests}`);
       }
 
+      // Determine which data types to sync
+      const shouldSyncActivity = !sampleTypes || sampleTypes.includes('activity');
+      const shouldSyncHeartrate = !sampleTypes || sampleTypes.includes('heartrate');
+      const shouldSyncSleep = !sampleTypes || sampleTypes.includes('sleep');
+      const shouldSyncOther = !sampleTypes || sampleTypes.includes('other');
+
       let totalSamples = 0;
       
       for (const dateStr of dates) {
@@ -556,24 +570,26 @@ class FitbitService {
         
         const dayResults = {};
         
-        // Sync each data type for this date
-        if (this.scopes.includes('activity')) {
+        // Sync each data type for this date based on selection
+        if (shouldSyncActivity && this.scopes.includes('activity')) {
           dayResults.activity = await this.syncActivityData(dateStr);
           totalSamples += dayResults.activity;
         }
         
-        if (this.scopes.includes('heartrate')) {
+        if (shouldSyncHeartrate && this.scopes.includes('heartrate')) {
           dayResults.heartrate = await this.syncHeartRateData(dateStr);
           totalSamples += dayResults.heartrate;
         }
         
-        if (this.scopes.includes('sleep')) {
+        if (shouldSyncSleep && this.scopes.includes('sleep')) {
           dayResults.sleep = await this.syncSleepData(dateStr);
           totalSamples += dayResults.sleep;
         }
         
-        dayResults.other = await this.syncOtherData(dateStr);
-        totalSamples += dayResults.other;
+        if (shouldSyncOther) {
+          dayResults.other = await this.syncOtherData(dateStr);
+          totalSamples += dayResults.other;
+        }
         
         results[dateStr] = dayResults;
         

@@ -71,22 +71,22 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
 
   router.post('/sync/trigger', async (req, res) => {
     try {
-      const { date, startDate, endDate } = req.body;
+      const { date, startDate, endDate, sampleTypes } = req.body;
       
       let results;
       let message;
       
       if (startDate && endDate) {
-        console.log(`Manual date range sync triggered: ${startDate} to ${endDate}`);
-        results = await fitbitService.syncDateRange(startDate, endDate);
+        console.log(`Manual date range sync triggered: ${startDate} to ${endDate}`, sampleTypes ? `for sample types: ${sampleTypes.join(', ')}` : 'for all sample types');
+        results = await fitbitService.syncDateRange(startDate, endDate, sampleTypes);
         message = `Date range sync completed for ${startDate} to ${endDate}`;
       } else if (date) {
-        console.log(`Manual date sync triggered for: ${date}`);
-        results = await fitbitService.syncAllData(date);
+        console.log(`Manual date sync triggered for: ${date}`, sampleTypes ? `for sample types: ${sampleTypes.join(', ')}` : 'for all sample types');
+        results = await fitbitService.syncAllData(date, sampleTypes);
         message = `Date sync completed for ${date}`;
       } else {
-        console.log('Manual sync triggered');
-        results = await fitbitService.syncAllData();
+        console.log('Manual sync triggered', sampleTypes ? `for sample types: ${sampleTypes.join(', ')}` : 'for all sample types');
+        results = await fitbitService.syncAllData(null, sampleTypes);
         message = 'Manual sync completed';
       }
       
