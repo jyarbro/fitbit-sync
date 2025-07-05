@@ -19,9 +19,39 @@
             <h1>Fitbit Sync Dashboard</h1>
             <div class="user-info">
                 <span id="user-name">Loading...</span>
+                <span id="rate-limit-icon" class="rate-limit-icon" title="Show Rate Limit Status"></span>
                 <a href="/auth/logout" class="btn btn-secondary">Logout</a>
             </div>
         </header>
+
+        <!-- Rate Limit Popup -->
+        <div id="rate-limit-popup" class="rate-limit-popup hidden">
+            <div class="popup-content">
+                <div class="popup-header">
+                    <h3>Rate Limit Status</h3>
+                    <button id="close-rate-limit-popup" class="close-btn">&times;</button>
+                </div>
+                <div class="status-content">
+                    <div class="status-item">
+                        <span class="status-label">Usage:</span>
+                        <span id="rate-limit-usage">Loading...</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Remaining:</span>
+                        <span id="rate-limit-remaining">Loading...</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Status:</span>
+                        <span id="rate-limit-health" class="status-badge">Loading...</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Reset Date:</span>
+                        <span id="rate-limit-reset">Loading...</span>
+                    </div>
+                    <button id="refresh-status-btn" class="btn btn-secondary btn-small">Refresh</button>
+                </div>
+            </div>
+        </div>
 
         <!-- Action Buttons -->
         <section class="actions">
@@ -183,32 +213,6 @@
                 <button id="prev-page" class="btn btn-small" disabled>Previous</button>
                 <span id="page-info">Page 1 of 1</span>
                 <button id="next-page" class="btn btn-small" disabled>Next</button>
-            </div>
-        </section>
-
-        <!-- Rate Limit Status -->
-        <section class="rate-limit-status" id="rate-limit-status">
-            <div class="status-header">
-                <h3>Rate Limit Status</h3>
-                <button id="refresh-status-btn" class="btn btn-secondary btn-small">Refresh</button>
-            </div>
-            <div class="status-content">
-                <div class="status-item">
-                    <span class="status-label">Usage:</span>
-                    <span id="rate-limit-usage">Loading...</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Remaining:</span>
-                    <span id="rate-limit-remaining">Loading...</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Status:</span>
-                    <span id="rate-limit-health" class="status-badge">Loading...</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Reset Date:</span>
-                    <span id="rate-limit-reset">Loading...</span>
-                </div>
             </div>
         </section>
     </div>

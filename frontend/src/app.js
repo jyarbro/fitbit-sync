@@ -101,4 +101,37 @@ export class App {
 document.addEventListener('DOMContentLoaded', async () => {
     const app = new App();
     await app.initialize();
+
+    // Rate limit icon and popup logic
+    const rateLimitIcon = document.getElementById('rate-limit-icon');
+    const rateLimitPopup = document.getElementById('rate-limit-popup');
+    const closePopupBtn = document.getElementById('close-rate-limit-popup');
+    const container = document.querySelector('.container');
+
+    function showRateLimitPopup() {
+        rateLimitPopup.classList.remove('hidden');
+        // Optionally reload status when opening
+        app.syncManager.loadRateLimitStatus();
+    }
+    function hideRateLimitPopup() {
+        rateLimitPopup.classList.add('hidden');
+    }
+    if (rateLimitIcon) {
+        rateLimitIcon.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showRateLimitPopup();
+        });
+    }
+    if (closePopupBtn) {
+        closePopupBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            hideRateLimitPopup();
+        });
+    }
+    // Hide popup when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!rateLimitPopup.classList.contains('hidden') && !rateLimitPopup.contains(e.target) && e.target !== rateLimitIcon) {
+            hideRateLimitPopup();
+        }
+    });
 });
