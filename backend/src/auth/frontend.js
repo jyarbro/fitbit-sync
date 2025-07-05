@@ -10,6 +10,10 @@ import crypto from 'crypto';
  * Frontend authentication service for JWT tokens and session management.
  */
 class AuthFrontend {
+  /**
+   * Create an AuthFrontend instance.
+   * @throws {Error} If JWT_SECRET is not set.
+   */
   constructor() {
     this.jwtSecret = process.env.JWT_SECRET;
     if (!this.jwtSecret) {
@@ -22,7 +26,7 @@ class AuthFrontend {
 
   /**
    * Generate personal JWT tokens for iOS shortcuts access.
-   * @returns {object} Access token, refresh token, and expiration
+   * @returns {object} Access token, refresh token, and expiration.
    */
   generatePersonalJWT() {
     const tokenId = crypto.randomBytes(16).toString('hex');

@@ -8,9 +8,12 @@ import AuthMicrosoft from './microsoft.js';
 import AuthFitbit from './fitbit.js';
 
 /**
- * Main authentication class that orchestrates all auth providers.
+ * Orchestrates all authentication providers (frontend, Microsoft, Fitbit).
  */
 class AuthOrchestrator {
+  /**
+   * Create an AuthOrchestrator instance.
+   */
   constructor() {
     this.frontend = new AuthFrontend();
     this.microsoft = new AuthMicrosoft();
@@ -18,11 +21,11 @@ class AuthOrchestrator {
   }
 
   /**
-   * Create combined authentication routes.
-   * @param {object} params - Dependencies for specific auth providers
-   * @param {object} params.fitbitService - Fitbit API service
-   * @param {object} params.db - Database service
-   * @returns {express.Router}
+   * Create combined authentication routes for all providers.
+   * @param {object} params - Dependencies for specific auth providers.
+   * @param {object} params.fitbitService - Fitbit API service.
+   * @param {object} params.db - Database service (legacy, may be unused).
+   * @returns {express.Router} Combined authentication router.
    */
   createRoutes({ fitbitService, db }) {
     const router = express.Router();
@@ -44,7 +47,7 @@ class AuthOrchestrator {
 
   /**
    * Get frontend auth service for JWT verification middleware.
-   * @returns {AuthFrontend}
+   * @returns {AuthFrontend} Frontend authentication service.
    */
   getFrontendService() {
     return this.frontend;
@@ -52,7 +55,7 @@ class AuthOrchestrator {
 
   /**
    * Get Microsoft auth service.
-   * @returns {AuthMicrosoft}
+   * @returns {AuthMicrosoft} Microsoft authentication service.
    */
   getMicrosoftService() {
     return this.microsoft;
@@ -60,7 +63,7 @@ class AuthOrchestrator {
 
   /**
    * Get Fitbit auth service.
-   * @returns {AuthFitbit}
+   * @returns {AuthFitbit} Fitbit authentication service.
    */
   getFitbitService() {
     return this.fitbit;

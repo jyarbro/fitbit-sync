@@ -1,5 +1,5 @@
 /**
- * Sample repository for health data sample operations.
+ * Repository for managing health data samples.
  * @module backend/data/sample-repository
  */
 import BaseRepository from './base-repository.js';
@@ -8,6 +8,11 @@ import BaseRepository from './base-repository.js';
  * Repository for managing health data samples.
  */
 class SampleRepository extends BaseRepository {
+  /**
+   * Stores an array of health data samples.
+   * @param {Array<Object>} samples - Array of sample objects.
+   * @returns {Promise<number>} Number of samples inserted.
+   */
   async store_samples(samples) {
     if (!samples || samples.length === 0) return 0;
 
@@ -54,6 +59,11 @@ class SampleRepository extends BaseRepository {
     });
   }
 
+  /**
+   * Retrieves samples added since the given timestamp.
+   * @param {string} last_sync_timestamp - ISO timestamp string.
+   * @returns {Promise<Array<Object>>} Array of sample objects.
+   */
   async get_samples_since(last_sync_timestamp) {
     const query = `
       SELECT type, value, timestamp, start_time, end_time
@@ -76,6 +86,15 @@ class SampleRepository extends BaseRepository {
     });
   }
 
+  /**
+   * Retrieves a paginated list of samples with optional filtering and sorting.
+   * @param {number} page - Page number (default: 1).
+   * @param {number} limit - Number of samples per page (default: 100).
+   * @param {string} type_filter - Optional sample type to filter by.
+   * @param {string} sort_column - Column to sort by (default: 'created_at').
+   * @param {string} sort_direction - Sort direction ('asc' or 'desc', default: 'desc').
+   * @returns {Promise<Object>} Paginated samples and pagination info.
+   */
   async get_samples_paginated(page = 1, limit = 100, type_filter = null, sort_column = 'created_at', sort_direction = 'desc') {
     const offset = (page - 1) * limit;
     const valid_sort_columns = ['type', 'value', 'timestamp', 'start_time', 'end_time', 'created_at'];
@@ -139,11 +158,20 @@ class SampleRepository extends BaseRepository {
     };
   }
 
+  /**
+   * Retrieves a list of distinct sample types.
+   * @returns {Promise<Array<string>>} Array of sample type strings.
+   */
   async get_sample_types() {
     const rows = await this.fetch_all('SELECT DISTINCT type FROM samples ORDER BY type');
     return rows.map(row => row.type);
   }
 
+  /**
+   * Deletes samples matching the given criteria.
+   * @param {Array<Object>} samples - Array of sample criteria objects.
+   * @returns {Promise<number>} Number of samples deleted.
+   */
   async delete_samples(samples) {
     if (!samples || samples.length === 0) {
       return 0;
@@ -182,6 +210,11 @@ class SampleRepository extends BaseRepository {
     return result.changes;
   }
 
+  /**
+   * Deletes samples with the given IDs.
+   * @param {Array<number>} sample_ids - Array of sample IDs to delete.
+   * @returns {Promise<number>} Number of samples deleted.
+   */
   async delete_samples_by_ids(sample_ids) {
     if (!sample_ids || sample_ids.length === 0) {
       return 0;
@@ -194,18 +227,33 @@ class SampleRepository extends BaseRepository {
     return result.changes;
   }
 
+  /**
+   * Deletes samples of the given type.
+   * @param {string} sample_type - Type of samples to delete.
+   * @returns {Promise<number>} Number of samples deleted.
+   */
   async delete_samples_by_type(sample_type) {
     const result = await this.execute_query('DELETE FROM samples WHERE type = ?', [sample_type]);
     console.log(`Deleted ${result.changes} samples of type ${sample_type}`);
     return result.changes;
   }
 
+  /**
+   * Deletes all samples in the repository.
+   * @returns {Promise<number>} Number of samples deleted.
+   */
   async delete_all_samples() {
     const result = await this.execute_query('DELETE FROM samples');
     console.log(`Deleted all ${result.changes} samples`);
     return result.changes;
   }
 
+  /**
+   * Deletes samples that fall on the given date.
+   * @param {string} date_str - Date string in YYYY-MM-DD format.
+   * @param {Array<string>} sample_types - Optional array of sample types to delete.
+   * @returns {Promise<Object>} Deletion result including count and date.
+   */
   async delete_samples_by_date(date_str, sample_types = null) {
     if (!date_str) {
       throw new Error('Date is required for deletion');
@@ -254,6 +302,12 @@ class SampleRepository extends BaseRepository {
     };
   }
 
+  /**
+   * Retrieves the count of samples by date and optional types.
+   * @param {string} date_str - Date string in YYYY-MM-DD format.
+   * @param {Array<string>} sample_types - Optional array of sample types to include.
+   * @returns {Promise<Object>} Count of samples, grouped by type.
+   */
   async get_sample_count_by_date(date_str, sample_types = null) {
     if (!date_str) {
       throw new Error('Date is required');
@@ -294,6 +348,11 @@ class SampleRepository extends BaseRepository {
     };
   }
 
+  /**
+   * Cleans up old samples older than the specified number of days.
+   * @param {number} days_to_keep - Number of days to keep samples (default: 30).
+   * @returns {Promise<number>} Number of old samples deleted.
+   */
   async cleanup_old_samples(days_to_keep = 30) {
     const cutoff_date = new Date();
     cutoff_date.setDate(cutoff_date.getDate() - days_to_keep);

@@ -6,16 +6,16 @@ import express from 'express';
 
 /**
  * Create API routes for data and sync operations.
- * @param {object} params
- * @param {object} params.db
- * @param {object} params.fitbitService
- * @param {object} params.authFrontendService - JWT authentication service
- * @param {object} params.validationMiddleware - Validation middleware service
- * @param {object} params.errorMiddleware - Error handling middleware service
- * @returns {express.Router}
+ * @param {object} params - Route dependencies.
+ * @param {object} params.dataService - DataService instance for repositories.
+ * @param {object} params.fitbitService - FitbitService instance.
+ * @param {object} params.authFrontendService - JWT authentication service.
+ * @param {object} params.validationMiddleware - Validation middleware service.
+ * @param {object} params.errorMiddleware - Error handling middleware service.
+ * @returns {express.Router} Express router for API endpoints.
  */
 export default function createApiRoutes({ 
-  db, 
+  dataService, // was db
   fitbitService, 
   authFrontendService, 
   validationMiddleware, 
@@ -55,8 +55,31 @@ export default function createApiRoutes({
       const sortColumn = req.query.sort || 'created_at';
       const sortDirection = req.query.direction || 'desc';
 
-      const result = await db.getSamplesPaginated(page, limit, typeFilter, sortColumn, sortDirection);
-      res.json(result);
+      const result = await dataService.sample_repository.get_samples_paginated(page, limit, typeFilter, sortColumn, sortDirection);
+      // Convert to original API format (camelCase)
+      const converted_samples = result.samples.map(sample => {
+        const converted = { 
+          id: sample.id,
+          type: sample.type, 
+          value: sample.value,
+          created_at: sample.created_at
+        };
+        if (sample.timestamp) converted.timestamp = sample.timestamp;
+        if (sample.start_time) converted.startTime = sample.start_time;
+        if (sample.end_time) converted.endTime = sample.end_time;
+        return converted;
+      });
+      res.json({
+        samples: converted_samples,
+        pagination: {
+          currentPage: result.pagination.current_page,
+          totalPages: result.pagination.total_pages,
+          totalCount: result.pagination.total_count,
+          limit: result.pagination.limit,
+          hasNext: result.pagination.has_next,
+          hasPrev: result.pagination.has_prev
+        }
+      });
     } catch (error) {
       console.error('Samples API error:', error);
       res.status(500).json({ error: error.message });
@@ -65,7 +88,7 @@ export default function createApiRoutes({
 
   router.get('/sample-types', async (req, res) => {
     try {
-      const types = await db.getSampleTypes();
+      const types = await dataService.sample_repository.get_sample_types();
       res.json({ types });
     } catch (error) {
       console.error('Sample types API error:', error);
@@ -77,7 +100,7 @@ export default function createApiRoutes({
     try {
       const { lastSyncTimestamp } = req.body;
       console.log(`Sync request received. Last sync: ${lastSyncTimestamp}`);
-      const samples = await db.getSamplesSince(lastSyncTimestamp);
+      const samples = await dataService.sample_repository.get_samples_since(lastSyncTimestamp);
       const now = new Date();
       const newLastSyncTimestamp = now.toISOString();
       res.json({
@@ -210,8 +233,8 @@ export default function createApiRoutes({
 
   router.get('/status', async (req, res) => {
     try {
-      const rateLimitStatus = await db.getRateLimitStatus();
-      const tokens = await db.getTokens();
+      const rateLimitStatus = await dataService.sync_log_repository.get_rate_limit_status();
+      const tokens = await dataService.token_repository.get_tokens();
       
       const now = Date.now();
       const resetTimestamp = rateLimitStatus.rate_limit_reset > 0 ? 
@@ -237,10 +260,10 @@ export default function createApiRoutes({
         tokenExpiry: tokens ? new Date(tokens.expires_at).toISOString() : null,
         scopes: fitbitService.scopes,
         lastSync: {
-          activity: await db.getLatestSyncTime('activity'),
-          heartrate: await db.getLatestSyncTime('heartrate'),
-          sleep: await db.getLatestSyncTime('sleep'),
-          other: await db.getLatestSyncTime('other_health_data'),
+          activity: await dataService.sync_log_repository.get_latest_sync_time('activity'),
+          heartrate: await dataService.sync_log_repository.get_latest_sync_time('heartrate'),
+          sleep: await dataService.sync_log_repository.get_latest_sync_time('sleep'),
+          other: await dataService.sync_log_repository.get_latest_sync_time('other_health_data'),
         },
       });
     } catch (error) {
@@ -265,7 +288,7 @@ export default function createApiRoutes({
       
       if (sampleIds.length === samples.length) {
         console.log(`Deleting ${sampleIds.length} samples by ID: [${sampleIds.join(', ')}]`);
-        deletedCount = await db.deleteSamplesByIds(sampleIds);
+        deletedCount = await dataService.sample_repository.delete_samples_by_ids(sampleIds);
       } else {
         console.log(`Deleting ${samples.length} samples by field matching`);
         
@@ -275,7 +298,7 @@ export default function createApiRoutes({
           }
         }
         
-        deletedCount = await db.deleteSamples(samples);
+        deletedCount = await dataService.sample_repository.delete_samples(samples);
       }
       
       console.log(`Successfully deleted ${deletedCount} samples`);
@@ -306,7 +329,7 @@ export default function createApiRoutes({
       }
 
       console.log(`Deleting samples with IDs: ${validIds.join(', ')}`);
-      const deletedCount = await db.deleteSamplesByIds(validIds);
+      const deletedCount = await dataService.sample_repository.delete_samples_by_ids(validIds);
       
       res.json({
         message: `Successfully deleted ${deletedCount} samples`,
@@ -329,7 +352,7 @@ export default function createApiRoutes({
       }
 
       console.log(`Deleting all samples of type: ${type}`);
-      const deletedCount = await db.deleteSamplesByType(type);
+      const deletedCount = await dataService.sample_repository.delete_samples_by_type(type);
       
       res.json({
         message: `Successfully deleted ${deletedCount} samples of type '${type}'`,
@@ -354,7 +377,7 @@ export default function createApiRoutes({
       }
 
       console.log('Deleting all samples');
-      const deletedCount = await db.deleteAllSamples();
+      const deletedCount = await dataService.sample_repository.delete_all_samples();
       
       res.json({
         message: `Successfully deleted all ${deletedCount} samples`,
@@ -385,11 +408,11 @@ export default function createApiRoutes({
         return res.status(400).json({ error: 'Types must be a non-empty array when provided' });
       }
 
-      const countInfo = await db.getSampleCountByDate(date, types);
+      const countInfo = await dataService.sample_repository.get_sample_count_by_date(date, types);
       
       console.log(`Deleting samples for date ${date}:`, countInfo);
 
-      if (countInfo.totalCount === 0) {
+      if (countInfo.total_count === 0) {
         return res.json({
           message: types 
             ? `No samples found for date ${date} with specified types: ${types.join(', ')}`
@@ -401,7 +424,7 @@ export default function createApiRoutes({
         });
       }
 
-      const result = await db.deleteSamplesByDate(date, types);
+      const result = await dataService.sample_repository.delete_samples_by_date(date, types);
       
       res.json({
         message: types 
@@ -441,13 +464,13 @@ export default function createApiRoutes({
         }
       }
 
-      const countInfo = await db.getSampleCountByDate(date, typesArray);
+      const countInfo = await dataService.sample_repository.get_sample_count_by_date(date, typesArray);
       
       res.json({
         date,
         types: typesArray || 'all',
-        totalCount: countInfo.totalCount,
-        byType: countInfo.byType,
+        totalCount: countInfo.total_count,
+        byType: countInfo.by_type,
         timestamp: new Date().toISOString()
       });
     } catch (error) {

@@ -14,10 +14,16 @@ sqlite3.verbose();
  */
 class DatabaseConnection {
   constructor() {
+    /** @private */
     this.db = null;
+    /** @private */
     this.db_path = join(__dirname, '../services/fitbit_sync.db');
   }
 
+  /**
+   * Initializes the SQLite database connection and creates tables if needed.
+   * @returns {Promise<void>}
+   */
   async initialize() {
     return new Promise((resolve, reject) => {
       this.db = new sqlite3.Database(this.db_path, (err) => {
@@ -32,6 +38,10 @@ class DatabaseConnection {
     });
   }
 
+  /**
+   * Creates all required tables if they do not exist.
+   * @returns {Promise<void>}
+   */
   async create_tables() {
     const create_tables_sql = `
       CREATE TABLE IF NOT EXISTS tokens (
@@ -84,10 +94,18 @@ class DatabaseConnection {
     });
   }
 
+  /**
+   * Gets the underlying SQLite database connection.
+   * @returns {sqlite3.Database}
+   */
   get_connection() {
     return this.db;
   }
 
+  /**
+   * Closes the database connection.
+   * @returns {void}
+   */
   close() {
     if (this.db) {
       this.db.close((err) => {

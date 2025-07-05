@@ -3,7 +3,6 @@ import dotenv from 'dotenv';
 import session from 'express-session';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import Database from './services/database.js';
 import FitbitService from './services/fitbit-service.js';
 import AuthOrchestrator from './auth/orchestrator.js';
 import SecurityMiddleware from './middleware/security.js';
@@ -15,6 +14,7 @@ import createApiRoutes from './routes/api.js';
 import setupBackgroundSync from './services/scheduler.js';
 import https from 'https';
 import fs from 'fs';
+import { DataService } from './data/index.js';
 
 // Configure dotenv to look for .env file in the backend directory (for local development)
 // In production, environment variables are provided by the platform
@@ -81,13 +81,15 @@ if (isDevelopment) {
   }
 }
 
-let db, fitbitService, authOrchestrator, securityMiddleware, validationMiddleware, errorMiddleware;
+let dataService, fitbitService, authOrchestrator, securityMiddleware, validationMiddleware, errorMiddleware;
 
 // Initialize database and services
 async function initializeServices() {
-  db = new Database();
-  await db.initialize();
-  fitbitService = new FitbitService(db);
+  // db = new Database();
+  // await db.initialize();
+  dataService = new DataService();
+  await dataService.initialize();
+  fitbitService = new FitbitService(dataService); // pass dataService instead of db
   authOrchestrator = new AuthOrchestrator();
   securityMiddleware = new SecurityMiddleware();
   validationMiddleware = new ValidationMiddleware();
@@ -133,9 +135,9 @@ app.use('/src', express.static(path.join(__dirname, '../../frontend/src')));
 function setupRoutes() {
   app.use('/', createRootRoutes());
   app.use('/health', createHealthRoutes());
-  app.use('/auth', authOrchestrator.createRoutes({ fitbitService, db }));
+  app.use('/auth', authOrchestrator.createRoutes({ fitbitService, dataService })); // pass dataService instead of db
   app.use('/api', createApiRoutes({ 
-    db, 
+    dataService, 
     fitbitService, 
     authFrontendService: authOrchestrator.getFrontendService(),
     validationMiddleware,
@@ -146,11 +148,11 @@ function setupRoutes() {
 // Handle graceful shutdown
 function setupGracefulShutdown() {
   process.on('SIGINT', () => {
-    if (db) db.close();
+    if (dataService) dataService.close();
     process.exit(0);
   });
   process.on('SIGTERM', () => {
-    if (db) db.close();
+    if (dataService) dataService.close();
     process.exit(0);
   });
 }
@@ -160,7 +162,7 @@ async function startServer() {
   try {
     await initializeServices();
     setupRoutes();
-    setupBackgroundSync({ fitbitService, db });
+    setupBackgroundSync({ fitbitService, dataService }); // pass dataService instead of db
     setupGracefulShutdown();
     if (isDevelopment) {
       if (httpsOptions) {

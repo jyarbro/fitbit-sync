@@ -9,8 +9,8 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * Create root routes.
- * @returns {express.Router}
+ * Create root routes for static files and main page.
+ * @returns {express.Router} Express router for root endpoints.
  */
 export default function createRootRoutes() {
   const router = express.Router();

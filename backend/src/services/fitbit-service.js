@@ -6,14 +6,23 @@ import axios from 'axios';
 
 /**
  * Fitbit API integration and token management.
+ * Handles OAuth tokens, API requests, and data synchronization for Fitbit user data.
  */
 class FitbitService {
-  constructor(database) {
-    this.db = database;
+  /**
+   * Create a FitbitService instance.
+   * @param {object} dataService - DataService instance providing repositories.
+   */
+  constructor(dataService) {
+    this.dataService = dataService;
     this.baseURL = 'https://api.fitbit.com';
     this.scopes = this.loadScopes();
   }
 
+  /**
+   * Load Fitbit API scopes from environment or use defaults.
+   * @returns {string[]} Array of scope names.
+   */
   loadScopes() {
     try {
       const scopesEnv = process.env.FITBIT_SCOPES;
@@ -33,8 +42,13 @@ class FitbitService {
     }
   }
 
+  /**
+   * Ensure a valid access token is available, refreshing if needed.
+   * @returns {Promise<string>} Access token.
+   * @throws {Error} If no tokens are found or refresh fails.
+   */
   async ensureValidToken() {
-    const tokens = await this.db.getTokens();
+    const tokens = await this.dataService.token_repository.get_tokens();
     
     if (!tokens) {
       throw new Error('No tokens found. Please complete OAuth flow first.');
@@ -49,8 +63,13 @@ class FitbitService {
     return tokens.access_token;
   }
 
+  /**
+   * Refresh the Fitbit OAuth token using the refresh token.
+   * @returns {Promise<string>} New access token.
+   * @throws {Error} If refresh token is missing or refresh fails.
+   */
   async refreshToken() {
-    const tokens = await this.db.getTokens();
+    const tokens = await this.dataService.token_repository.get_tokens();
     
     if (!tokens || !tokens.refresh_token) {
       throw new Error('No refresh token available');
@@ -69,7 +88,7 @@ class FitbitService {
         }
       );
       
-      await this.db.storeTokens(
+      await this.dataService.token_repository.store_tokens(
         response.data.access_token,
         response.data.refresh_token,
         response.data.expires_in
@@ -83,6 +102,11 @@ class FitbitService {
     }
   }
 
+  /**
+   * Get a local date string in YYYY-MM-DD format.
+   * @param {Date} [date] - Date object (defaults to now).
+   * @returns {string} Local date string.
+   */
   getLocalDateString(date = new Date()) {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -90,6 +114,11 @@ class FitbitService {
     return `${year}-${month}-${day}`;
   }
 
+  /**
+   * Extract Fitbit API rate limit information from a response.
+   * @param {object} response - Axios response object.
+   * @returns {object} Rate limit info.
+   */
   extractRateLimitInfo(response) {
     const remaining = parseInt(response.headers['fitbit-rate-limit-remaining']) || 0;
     const resetIn = parseInt(response.headers['fitbit-rate-limit-reset']) || 0;
@@ -109,6 +138,14 @@ class FitbitService {
     };
   }
 
+  /**
+   * Make an authenticated GET request to the Fitbit API.
+   * Handles token refresh and rate limit errors.
+   * @param {string} endpoint - Fitbit API endpoint (e.g., '/1/user/-/activities/steps/date/...').
+   * @param {object} [params] - Query parameters.
+   * @returns {Promise<{data: object, rateLimitInfo: object}>} API response data and rate limit info.
+   * @throws {Error} On request failure or rate limit exceeded.
+   */
   async makeAPIRequest(endpoint, params = {}) {
     const accessToken = await this.ensureValidToken();
     
@@ -164,6 +201,12 @@ class FitbitService {
     }
   }
 
+  /**
+   * Synchronize activity data (steps, calories) for a given date.
+   * @param {string} [dateStr] - Date string (YYYY-MM-DD). Defaults to today.
+   * @returns {Promise<number>} Number of samples processed.
+   * @throws {Error} On sync failure.
+   */
   async syncActivityData(dateStr = null) {
     console.log('Syncing activity data...');
     const samples = [];
@@ -196,10 +239,10 @@ class FitbitService {
       samples.push(...caloriesSamples);
 
       if (samples.length > 0) {
-        await this.db.storeSamples(samples);
+        await this.dataService.sample_repository.store_samples(samples);
       }
 
-      await this.db.updateSyncLog(
+      await this.dataService.sync_log_repository.update_sync_log(
         'activity',
         now.toISOString(),
         'success',
@@ -210,7 +253,7 @@ class FitbitService {
       
       return samples.length;
     } catch (error) {
-      await this.db.updateSyncLog(
+      await this.dataService.sync_log_repository.update_sync_log(
         'activity',
         now.toISOString(),
         'error',
@@ -222,6 +265,12 @@ class FitbitService {
     }
   }
 
+  /**
+   * Process intraday steps data into sample blocks.
+   * @param {object[]} dataset - Fitbit steps dataset.
+   * @param {string} dateStr - Date string (YYYY-MM-DD).
+   * @returns {object[]} Array of step sample objects.
+   */
   processStepsData(dataset, dateStr) {
     const samples = [];
     let currentBlock = null;
@@ -304,6 +353,13 @@ class FitbitService {
     return samples;
   }
 
+  /**
+   * Process intraday calories data into active calorie samples.
+   * @param {object[]} dataset - Fitbit calories dataset.
+   * @param {number} bmrPerMinute - Basal metabolic rate per minute.
+   * @param {string} dateStr - Date string (YYYY-MM-DD).
+   * @returns {object[]} Array of active calorie sample objects.
+   */
   processCaloriesData(dataset, bmrPerMinute, dateStr) {
     const samples = [];
     
@@ -324,6 +380,12 @@ class FitbitService {
     return samples;
   }
 
+  /**
+   * Synchronize heart rate data for a given date.
+   * @param {string} [dateStr] - Date string (YYYY-MM-DD). Defaults to today.
+   * @returns {Promise<number>} Number of samples processed.
+   * @throws {Error} On sync failure.
+   */
   async syncHeartRateData(dateStr = null) {
     console.log('Syncing heart rate data...');
     const samples = [];
@@ -341,10 +403,10 @@ class FitbitService {
       samples.push(...heartRateSamples);
       
       if (samples.length > 0) {
-        await this.db.storeSamples(samples);
+        await this.dataService.sample_repository.store_samples(samples);
       }
 
-      await this.db.updateSyncLog(
+      await this.dataService.sync_log_repository.update_sync_log(
         'heartrate',
         now.toISOString(),
         'success',
@@ -354,7 +416,7 @@ class FitbitService {
       console.log(`Heart rate sync completed: ${samples.length} samples processed`);
       return samples.length;
     } catch (error) {
-      await this.db.updateSyncLog(
+      await this.dataService.sync_log_repository.update_sync_log(
         'heartrate',
         now.toISOString(),
         'error',
@@ -365,6 +427,12 @@ class FitbitService {
     }
   }
 
+  /**
+   * Process intraday heart rate data into sample blocks using exertion detection.
+   * @param {object[]} dataset - Fitbit heart rate dataset.
+   * @param {string} dateStr - Date string (YYYY-MM-DD).
+   * @returns {object[]} Array of heart rate sample objects.
+   */
   processHeartRateData(dataset, dateStr) {
     const samples = [];
     let currentBlock = null;
@@ -520,6 +588,12 @@ class FitbitService {
     return samples;
   }
 
+  /**
+   * Synchronize sleep data for a given date (previous night if not specified).
+   * @param {string} [dateStr] - Date string (YYYY-MM-DD). Defaults to previous night.
+   * @returns {Promise<number>} Number of samples processed.
+   * @throws {Error} On sync failure.
+   */
   async syncSleepData(dateStr = null) {
     console.log('Syncing sleep data...');
     const samples = [];
@@ -568,10 +642,10 @@ class FitbitService {
       }
       
       if (samples.length > 0) {
-        await this.db.storeSamples(samples);
+        await this.dataService.sample_repository.store_samples(samples);
       }
 
-      await this.db.updateSyncLog(
+      await this.dataService.sync_log_repository.update_sync_log(
         'sleep',
         now.toISOString(),
         'success',
@@ -581,7 +655,7 @@ class FitbitService {
       console.log(`Sleep sync completed: ${samples.length} samples processed`);
       return samples.length;
     } catch (error) {
-      await this.db.updateSyncLog(
+      await this.dataService.sync_log_repository.update_sync_log(
         'sleep',
         now.toISOString(),
         'error',
@@ -592,6 +666,12 @@ class FitbitService {
     }
   }
 
+  /**
+   * Synchronize other health data (SpO2, respiratory rate, temperature) for a given date.
+   * @param {string} [dateStr] - Date string (YYYY-MM-DD). Defaults to today.
+   * @returns {Promise<number>} Number of samples processed.
+   * @throws {Error} On sync failure.
+   */
   async syncOtherData(dateStr = null) {
     console.log('Syncing other health data...');
     const samples = [];
@@ -661,10 +741,10 @@ class FitbitService {
       }
       
       if (samples.length > 0) {
-        await this.db.storeSamples(samples);
+        await this.dataService.sample_repository.store_samples(samples);
       }
 
-      await this.db.updateSyncLog(
+      await this.dataService.sync_log_repository.update_sync_log(
         'other_health_data',
         now.toISOString(),
         'success',
@@ -674,7 +754,7 @@ class FitbitService {
       console.log(`Other health data sync completed: ${samples.length} samples processed`);
       return samples.length;
     } catch (error) {
-      await this.db.updateSyncLog(
+      await this.dataService.sync_log_repository.update_sync_log(
         'other_health_data',
         now.toISOString(),
         'error',
@@ -685,13 +765,20 @@ class FitbitService {
     }
   }
 
+  /**
+   * Synchronize all available data types for a given date.
+   * @param {string} [dateStr] - Date string (YYYY-MM-DD). Defaults to today.
+   * @param {string[]} [sampleTypes] - Array of sample types to sync (activity, heartrate, sleep, other).
+   * @returns {Promise<object>} Results object with sample counts per type.
+   * @throws {Error} On sync failure.
+   */
   async syncAllData(dateStr = null, sampleTypes = null) {
     console.log('Starting full data sync...');
     const results = {};
     
     try {
       // Check rate limit before starting
-      const rateLimitStatus = await this.db.getRateLimitStatus();
+      const rateLimitStatus = await this.dataService.sync_log_repository.get_rate_limit_status();
       
       console.log(`📊 Pre-sync rate limit check: ${rateLimitStatus.rate_limit_remaining} requests remaining`);
       
@@ -741,6 +828,14 @@ class FitbitService {
     }
   }
 
+  /**
+   * Synchronize all available data types for a date range.
+   * @param {string} startDate - Start date (YYYY-MM-DD).
+   * @param {string} endDate - End date (YYYY-MM-DD).
+   * @param {string[]} [sampleTypes] - Array of sample types to sync.
+   * @returns {Promise<{results: object, totalSamples: number, datesProcessed: number}>} Sync results.
+   * @throws {Error} On sync failure or excessive date range.
+   */
   async syncDateRange(startDate, endDate, sampleTypes = null) {
     console.log(`Starting date range sync from ${startDate} to ${endDate}...`);
     const results = {};
@@ -748,7 +843,7 @@ class FitbitService {
     
     try {
       // Check rate limit before starting
-      const rateLimitStatus = await this.db.getRateLimitStatus();
+      const rateLimitStatus = await this.dataService.sync_log_repository.get_rate_limit_status();
       const requiredRequests = dates.length * 4; // Approximate requests per date
       
       console.log(`📊 Pre-sync rate limit check for date range:`);
@@ -819,6 +914,13 @@ class FitbitService {
     }
   }
 
+  /**
+   * Get an array of date strings for a date range (inclusive).
+   * @param {string} startDate - Start date (YYYY-MM-DD).
+   * @param {string} endDate - End date (YYYY-MM-DD).
+   * @returns {string[]} Array of date strings.
+   * @throws {Error} If start date is after end date or range is too large.
+   */
   getDateRange(startDate, endDate) {
     const dates = [];
     const start = new Date(startDate);

@@ -5,8 +5,8 @@
 import express from 'express';
 
 /**
- * Create health check routes.
- * @returns {express.Router}
+ * Create health check routes for service monitoring.
+ * @returns {express.Router} Express router with health endpoint.
  */
 export default function createHealthRoutes() {
   const router = express.Router();
