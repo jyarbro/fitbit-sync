@@ -146,7 +146,7 @@ async function generateJWT() {
         generateJwtBtn.textContent = 'Generating...';
         
         const data = await apiCall('/auth/newtoken');
-        jwtToken.value = data.personalJWT;
+        jwtToken.value = data.accessToken;
         jwtDisplay.classList.remove('hidden');
         
         showSuccess('JWT token generated successfully!');
