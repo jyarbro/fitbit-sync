@@ -14,13 +14,20 @@ import setupBackgroundSync from './services/scheduler.js';
 import https from 'https';
 import fs from 'fs';
 
-dotenv.config();
-
-// Entry point for backend server. Sets up Express app, security, session, routes, and HTTPS.
+// Configure dotenv to look for .env file in the backend directory (for local development)
+// In production, environment variables are provided by the platform
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const backendDir = path.resolve(__dirname, '..');
+
+// Only load .env file if JWT_SECRET is not already set (i.e., in local development)
+if (!process.env.JWT_SECRET) {
+  dotenv.config({ path: path.join(backendDir, '.env') });
+}
+
+// Entry point for backend server. Sets up Express app, security, session, routes, and HTTPS.
 const app = express();
-const PORT = process.env.PORT || 443;
+const PORT = process.env.PORT || 8080;
 
 if (!process.env.JWT_SECRET) {
   console.error('ERROR: JWT_SECRET environment variable is required');
@@ -144,15 +151,16 @@ async function startServer() {
     if (isDevelopment) {
       if (httpsOptions) {
         https.createServer(httpsOptions, app).listen(PORT, () => {
-          console.log(`HTTPS server running`);
+          console.log(`HTTPS server running on port ${PORT}`);
         });
       } else {
         console.error('ERROR: HTTPS certificates are required for development but could not be loaded.');
         process.exit(1);
       }
     } else {
-      https.createServer(app).listen(PORT, () => {
-        console.log(`HTTPS server running on port ${PORT}`);
+      // In production, DigitalOcean handles SSL termination, so we use HTTP
+      app.listen(PORT, () => {
+        console.log(`HTTP server running on port ${PORT}`);
       });
     }
   } catch (error) {

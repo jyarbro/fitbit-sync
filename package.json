@@ -8,6 +8,10 @@
   ],
   "scripts": {
     "start": "npm run start --workspace=backend",
-    "dev": "npm run dev --workspace=backend"
+    "dev": "npm run dev --workspace=backend",
+    "do-update": "dotenv -e .env -- sh -c 'doctl apps update \"$DO_APP_ID\" --spec .do/app.yaml'"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^8.0.0"
   }
 }
