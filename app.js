@@ -15,7 +15,7 @@ import fs from 'fs';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 443;
 
 // Ensure JWT_SECRET is set
 if (!process.env.JWT_SECRET) {
@@ -52,7 +52,7 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin'); // Control referrer information
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()'); // Restrict browser features
   
-  // HSTS (HTTP Strict Transport Security) - only for HTTPS
+  // HSTS (HTTP Strict Transport Security) - always enabled for HTTPS
   if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
   }
@@ -60,11 +60,24 @@ app.use((req, res, next) => {
   next();
 });
 
-// Read TLS cert and key
-const httpsOptions = {
-  key: fs.readFileSync('server.key'),
-  cert: fs.readFileSync('server.cert')
-};
+// Read TLS cert and key for development only
+let httpsOptions = null;
+const isDevelopment = process.env.NODE_ENV !== 'production';
+
+if (isDevelopment) {
+  try {
+    httpsOptions = {
+      key: fs.readFileSync('server.key'),
+      cert: fs.readFileSync('server.cert')
+    };
+    console.log('Using self-signed certificates for development');
+  } catch (error) {
+    console.error('ERROR: Could not read SSL certificates for development.');
+    console.error('Make sure server.key and server.cert exist for HTTPS development server.');
+    console.error('HTTPS is required for Fitbit OAuth to work properly.');
+    httpsOptions = null;
+  }
+}
 
 let db, fitbitService, authService;
 
@@ -87,7 +100,7 @@ app.use(session({
   secret: process.env.JWT_SECRET,
   resave: false,
   saveUninitialized: false,
-  name: '__Host-session', // Use secure cookie prefix
+  name: '__Host-session', // Use secure cookie prefix for HTTPS
   cookie: {
     secure: true, // Always require HTTPS
     httpOnly: true,
@@ -131,9 +144,24 @@ async function startServer() {
     setupRoutes();
     setupBackgroundSync({ fitbitService, db });
     setupGracefulShutdown();
-    https.createServer(httpsOptions, app).listen(PORT, () => {
-      console.log(`HTTPS server running on https://localhost:${PORT}`);
-    });
+    
+    if (isDevelopment) {
+      // Development: Use HTTPS with self-signed certificates
+      if (httpsOptions) {
+        https.createServer(httpsOptions, app).listen(PORT, () => {
+          console.log(`HTTPS server running on https://localhost:${PORT}`);
+        });
+      } else {
+        console.error('ERROR: HTTPS certificates are required for development but could not be loaded.');
+        console.error('Please ensure server.key and server.cert exist in the project root.');
+        process.exit(1);
+      }
+    } else {
+      // Production: Use HTTPS with Digital Ocean managed certificates
+      https.createServer(app).listen(PORT, () => {
+        console.log(`HTTPS server running on port ${PORT} (certificates managed by Digital Ocean)`);
+      });
+    }
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
