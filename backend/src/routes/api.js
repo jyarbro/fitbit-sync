@@ -1,42 +1,39 @@
+/**
+ * API routes for data access and sync operations.
+ * @module backend/routes/api
+ */
 import express from 'express';
 
+/**
+ * Create API routes for data and sync operations.
+ * @param {object} params
+ * @param {object} params.db
+ * @param {object} params.fitbitService
+ * @param {object} params.authService
+ * @returns {express.Router}
+ */
 export default function createApiRoutes({ db, fitbitService, authService }) {
   const router = express.Router();
 
-  // Combined authentication middleware - accepts either JWT or session
   router.use((req, res, next) => {
-    // Check for JWT token first
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
-      // Use JWT middleware
       return authService.verifyJWTMiddleware()(req, res, next);
     }
-    
-    // Check for session authentication with enhanced security
     if (req.session?.user?.authenticated) {
-      // Additional checks to ensure session is valid
       const sessionUser = req.session.user;
-      
-      // Verify session has required user properties
       if (!sessionUser.id || !sessionUser.email) {
         return res.status(401).json({ error: 'Invalid session structure' });
       }
-      
-      // Check session age to ensure it's not too old (optional additional check)
       const sessionCreatedAt = req.session.createdAt || Date.now();
       const sessionAge = Date.now() - sessionCreatedAt;
-      const maxSessionAge = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
-      
+      const maxSessionAge = 7 * 24 * 60 * 60 * 1000;
       if (sessionAge > maxSessionAge) {
         req.session.destroy();
         return res.status(401).json({ error: 'Session expired, please login again' });
       }
-      
-      // Session is valid, proceed
       return next();
     }
-    
-    // Neither authentication method is valid
     return res.status(401).json({ error: 'Authentication required - provide JWT token or valid session' });
   });
 
@@ -117,7 +114,6 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
     } catch (error) {
       console.error('Manual sync error:', error);
       
-      // Log the full error details for debugging
       console.error('Full error object:', {
         message: error.message,
         stack: error.stack,
@@ -126,24 +122,19 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
         headers: error.response?.headers
       });
       
-      // Return sanitized error information based on environment
       const isDevelopment = process.env.NODE_ENV === 'development';
       
-      // Create a safe error response that doesn't expose sensitive information
       const errorResponse = {
         error: 'Error processing request',
         timestamp: new Date().toISOString()
       };
       
-      // Add more information only in development mode
       if (isDevelopment) {
         errorResponse.message = error.message;
         
-        // Only include basic status information from response, not full data
         if (error.response) {
           errorResponse.httpStatus = error.response.status;
           
-          // Include safe error types but not detailed data
           if (error.response.data?.errors) {
             errorResponse.errorTypes = Array.isArray(error.response.data.errors) ? 
               error.response.data.errors.map(e => e.type || e.code) : 
@@ -152,14 +143,11 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
         }
       }
       
-      // Determine appropriate HTTP status code
       const statusCode = error.response?.status === 429 ? 429 : 
                         error.response?.status === 401 ? 401 : 
                         error.message.includes('Rate limit') ? 429 : 500;
       
-      // Add user-friendly message with detailed rate limit info
       if (statusCode === 429) {
-        // Try to extract rate limit details from the error message (multiple patterns)
         let rateLimitMatch = error.message.match(/Used (\d+)\/(\d+) requests\. (\d+) remaining\. Resets in (\d+) seconds/);
         
         if (rateLimitMatch) {
@@ -174,7 +162,6 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
             resetDate: resetDate.toISOString()
           };
         } else {
-          // Try alternative patterns for other rate limit errors
           const simpleLimitMatch = error.message.match(/Rate limit too low: (\d+) requests remaining.*?resets in (\d+) seconds at (.+)/);
           const rangeLimitMatch = error.message.match(/Rate limit too low: (\d+) requests remaining, need approximately (\d+).*?resets in (\d+) seconds at (.+)/);
           
@@ -218,7 +205,6 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
       const rateLimitStatus = await db.getRateLimitStatus();
       const tokens = await db.getTokens();
       
-      // Enhanced rate limit information
       const now = Date.now();
       const resetTimestamp = rateLimitStatus.rate_limit_reset > 0 ? 
         now + (rateLimitStatus.rate_limit_reset * 1000) : null;
@@ -233,7 +219,7 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
         resetDateFormatted: resetTimestamp ? new Date(resetTimestamp).toLocaleString() : null,
         status: rateLimitStatus.rate_limit_remaining > 50 ? 'healthy' : 
                 rateLimitStatus.rate_limit_remaining > 20 ? 'warning' : 'critical',
-        isStale: rateLimitStatus.rate_limit_reset === 0 // No reset time means data might be default/stale
+        isStale: rateLimitStatus.rate_limit_reset === 0
       };
       
       console.log(`📊 Status endpoint called - Rate limit: ${enhancedRateLimit.remaining}/150 (${enhancedRateLimit.percentageUsed}% used, ${enhancedRateLimit.status})${enhancedRateLimit.isStale ? ' [STALE DATA]' : ''}`);
@@ -255,7 +241,6 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
     }
   });
 
-  // Delete selected samples
   router.delete('/samples', async (req, res) => {
     try {
       const { samples } = req.body;
@@ -266,20 +251,16 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
 
       console.log('Received samples for deletion:', JSON.stringify(samples, null, 2));
 
-      // Check if we have IDs for all samples - prefer ID-based deletion
       const sampleIds = samples.map(s => s.id).filter(id => id !== undefined && id !== null);
       
       let deletedCount;
       
       if (sampleIds.length === samples.length) {
-        // All samples have IDs, use ID-based deletion (more reliable)
         console.log(`Deleting ${sampleIds.length} samples by ID: [${sampleIds.join(', ')}]`);
         deletedCount = await db.deleteSamplesByIds(sampleIds);
       } else {
-        // Fallback to field-based deletion
         console.log(`Deleting ${samples.length} samples by field matching`);
         
-        // Validate sample data for field-based deletion
         for (const sample of samples) {
           if (!sample.type || (sample.value === undefined || sample.value === null)) {
             return res.status(400).json({ error: 'Invalid sample data: type and value are required' });
@@ -303,7 +284,6 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
     }
   });
 
-  // Delete samples by IDs
   router.delete('/samples/ids', async (req, res) => {
     try {
       const { ids } = req.body;
@@ -312,7 +292,6 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
         return res.status(400).json({ error: 'No sample IDs provided for deletion' });
       }
 
-      // Validate IDs are numbers
       const validIds = ids.filter(id => Number.isInteger(id) && id > 0);
       if (validIds.length === 0) {
         return res.status(400).json({ error: 'No valid sample IDs provided' });
@@ -333,7 +312,6 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
     }
   });
 
-  // Delete all samples of a specific type
   router.delete('/samples/type/:type', async (req, res) => {
     try {
       const { type } = req.params;
@@ -357,7 +335,6 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
     }
   });
 
-  // Delete all samples (with confirmation)
   router.delete('/samples/all', async (req, res) => {
     try {
       const { confirm } = req.body;
@@ -382,28 +359,24 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
     }
   });
 
-  // Delete samples by date
   router.delete('/samples/date/:date', async (req, res) => {
     try {
       const { date } = req.params;
-      const { types } = req.body; // Optional array of sample types to delete
+      const { types } = req.body;
       
       if (!date) {
         return res.status(400).json({ error: 'Date parameter is required' });
       }
 
-      // Validate date format
       const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
       if (!dateRegex.test(date)) {
         return res.status(400).json({ error: 'Date must be in YYYY-MM-DD format' });
       }
 
-      // Validate types if provided
       if (types && (!Array.isArray(types) || types.length === 0)) {
         return res.status(400).json({ error: 'Types must be a non-empty array when provided' });
       }
 
-      // Get sample count first for logging
       const countInfo = await db.getSampleCountByDate(date, types);
       
       console.log(`Deleting samples for date ${date}:`, countInfo);
@@ -438,23 +411,20 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
     }
   });
 
-  // Get sample count by date (for preview before deletion)
   router.get('/samples/date/:date/count', async (req, res) => {
     try {
       const { date } = req.params;
-      const { types } = req.query; // Optional comma-separated list of sample types
+      const { types } = req.query;
       
       if (!date) {
         return res.status(400).json({ error: 'Date parameter is required' });
       }
 
-      // Validate date format
       const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
       if (!dateRegex.test(date)) {
         return res.status(400).json({ error: 'Date must be in YYYY-MM-DD format' });
       }
 
-      // Parse types from query string
       let typesArray = null;
       if (types) {
         typesArray = types.split(',').map(t => t.trim()).filter(t => t);

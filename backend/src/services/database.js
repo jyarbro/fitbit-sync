@@ -1,11 +1,20 @@
+/**
+ * Database class for SQLite operations and schema management.
+ * @module backend/services/database
+ */
 import sqlite3 from 'sqlite3';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+
+/**
+ * SQLite database wrapper for Fitbit Sync.
+ */
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 sqlite3.verbose();
 
+// Database class for SQLite operations and schema management
 class Database {
   constructor() {
     this.db = null;
@@ -28,7 +37,6 @@ class Database {
 
   async createTables() {
     const createTablesSQL = `
-      -- Store OAuth tokens
       CREATE TABLE IF NOT EXISTS tokens (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         access_token TEXT NOT NULL,
@@ -38,7 +46,6 @@ class Database {
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
-      -- Store processed samples ready for iOS
       CREATE TABLE IF NOT EXISTS samples (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         type TEXT NOT NULL,
@@ -50,7 +57,6 @@ class Database {
         UNIQUE(type, timestamp, start_time, end_time)
       );
 
-      -- Store sync metadata and rate limit info
       CREATE TABLE IF NOT EXISTS sync_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         data_type TEXT NOT NULL,
@@ -62,7 +68,6 @@ class Database {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
-      -- Index for efficient querying
       CREATE INDEX IF NOT EXISTS idx_samples_timestamp ON samples(timestamp);
       CREATE INDEX IF NOT EXISTS idx_samples_start_time ON samples(start_time);
       CREATE INDEX IF NOT EXISTS idx_samples_type ON samples(type);
@@ -86,14 +91,12 @@ class Database {
     const expiresAt = Date.now() + (expiresIn * 1000);
     
     return new Promise((resolve, reject) => {
-      // Delete existing tokens first
       this.db.run('DELETE FROM tokens', (err) => {
         if (err) {
           reject(err);
           return;
         }
         
-        // Insert new tokens
         this.db.run(
           'INSERT INTO tokens (access_token, refresh_token, expires_at) VALUES (?, ?, ?)',
           [accessToken, refreshToken, expiresAt],
@@ -185,7 +188,6 @@ class Database {
         if (err) {
           reject(err);
         } else {
-          // Clean up null values for iOS
           const cleanedRows = rows.map(row => {
             const cleaned = { type: row.type, value: row.value };
             if (row.timestamp) cleaned.timestamp = row.timestamp;
@@ -201,7 +203,6 @@ class Database {
 
   async updateSyncLog(dataType, lastSyncTime, status, rateLimitInfo = {}, errorMessage = null) {
     return new Promise((resolve, reject) => {
-      // Convert resetIn (seconds until reset) to actual reset timestamp
       let resetTimestamp = null;
       if (rateLimitInfo.resetIn) {
         resetTimestamp = Date.now() + (rateLimitInfo.resetIn * 1000);
@@ -217,7 +218,7 @@ class Database {
           lastSyncTime, 
           status, 
           rateLimitInfo.remaining || null,
-          resetTimestamp, // Store actual timestamp when it resets
+          resetTimestamp,
           errorMessage
         ],
         function(err) {
@@ -256,7 +257,7 @@ class Database {
             reject(err);
           } else {
             if (!row) {
-              console.log(`💾 No rate limit data in database, using defaults: 150 remaining`);
+              console.log(`No rate limit data in database, using defaults: 150 remaining`);
               resolve({ rate_limit_remaining: 150, rate_limit_reset: 0 });
               return;
             }
@@ -264,14 +265,12 @@ class Database {
             const now = Date.now();
             const resetTimestamp = row.rate_limit_reset;
             
-            // Check if the rate limit has reset since we last stored data
             if (resetTimestamp && now >= resetTimestamp) {
-              console.log(`💾 Rate limit has reset since last record (${new Date(resetTimestamp).toLocaleString()}), using fresh 150 remaining`);
+              console.log(`Rate limit has reset since last record (${new Date(resetTimestamp).toLocaleString()}), using fresh 150 remaining`);
               resolve({ rate_limit_remaining: 150, rate_limit_reset: 0 });
               return;
             }
             
-            // Calculate seconds until reset
             const secondsUntilReset = resetTimestamp ? Math.max(0, Math.floor((resetTimestamp - now) / 1000)) : 0;
             
             const result = {
@@ -279,7 +278,7 @@ class Database {
               rate_limit_reset: secondsUntilReset
             };
             
-            console.log(`💾 Database rate limit status (from ${row.created_at}): ${result.rate_limit_remaining} remaining, resets in ${result.rate_limit_reset}s at ${resetTimestamp ? new Date(resetTimestamp).toLocaleString() : 'unknown'}`);
+            console.log(`Database rate limit status (from ${row.created_at}): ${result.rate_limit_remaining} remaining, resets in ${result.rate_limit_reset}s at ${resetTimestamp ? new Date(resetTimestamp).toLocaleString() : 'unknown'}`);
             
             resolve(result);
           }
@@ -293,7 +292,6 @@ class Database {
     const validSortColumns = ['type', 'value', 'timestamp', 'start_time', 'end_time', 'created_at'];
     const validDirections = ['asc', 'desc'];
     
-    // Validate sort parameters
     if (!validSortColumns.includes(sortColumn)) {
       sortColumn = 'created_at';
     }
@@ -309,7 +307,6 @@ class Database {
       params.push(typeFilter);
     }
 
-    // Get total count
     const countQuery = `SELECT COUNT(*) as total FROM samples ${whereClause}`;
     const totalCount = await new Promise((resolve, reject) => {
       this.db.get(countQuery, params, (err, row) => {
@@ -318,7 +315,6 @@ class Database {
       });
     });
 
-    // Get samples with pagination
     const dataQuery = `
       SELECT id, type, value, timestamp, start_time as startTime, end_time as endTime, created_at
       FROM samples 
@@ -334,7 +330,6 @@ class Database {
         if (err) {
           reject(err);
         } else {
-          // Clean up null values for frontend
           const cleanedRows = rows.map(row => {
             const cleaned = { 
               id: row.id,
@@ -387,7 +382,6 @@ class Database {
       return 0;
     }
 
-    // Build WHERE conditions for each sample to delete
     const conditions = samples.map(sample => {
       const conditions = ['type = ?'];
       const params = [sample.type];
@@ -484,26 +478,22 @@ class Database {
     });
   }
 
-  // Delete all samples for a specific date
   async deleteSamplesByDate(dateStr, sampleTypes = null) {
     if (!dateStr) {
       throw new Error('Date is required for deletion');
     }
 
-    // Validate date format (YYYY-MM-DD)
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateRegex.test(dateStr)) {
       throw new Error('Date must be in YYYY-MM-DD format');
     }
 
-    // Create date boundaries for the given day
     const startOfDay = `${dateStr}T00:00:00.000Z`;
     const endOfDay = `${dateStr}T23:59:59.999Z`;
 
     let whereConditions = [];
     let params = [];
 
-    // Build date conditions - samples can have timestamp, start_time, or end_time
     whereConditions.push(`(
       (timestamp >= ? AND timestamp <= ?) OR 
       (start_time >= ? AND start_time <= ?) OR
@@ -513,10 +503,8 @@ class Database {
       (DATE(end_time) = ?)
     )`);
     
-    // Add parameters for date conditions (9 total)
     params.push(startOfDay, endOfDay, startOfDay, endOfDay, startOfDay, endOfDay, dateStr, dateStr, dateStr);
 
-    // Add type filtering if specified
     if (sampleTypes && Array.isArray(sampleTypes) && sampleTypes.length > 0) {
       const typePlaceholders = sampleTypes.map(() => '?').join(',');
       whereConditions.push(`type IN (${typePlaceholders})`);
@@ -546,7 +534,6 @@ class Database {
     });
   }
 
-  // Get sample count by date for verification
   async getSampleCountByDate(dateStr, sampleTypes = null) {
     if (!dateStr) {
       throw new Error('Date is required');

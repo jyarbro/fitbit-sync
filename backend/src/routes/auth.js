@@ -1,7 +1,19 @@
+/**
+ * Authentication and OAuth routes.
+ * @module backend/routes/auth
+ */
 import express from 'express';
 import axios from 'axios';
 import jwt from 'jsonwebtoken';
 
+/**
+ * Create authentication and OAuth routes.
+ * @param {object} params
+ * @param {object} params.fitbitService
+ * @param {object} params.authService
+ * @param {object} params.db
+ * @returns {express.Router}
+ */
 export default function createAuthRoutes({ fitbitService, authService, db }) {
   const router = express.Router();
 

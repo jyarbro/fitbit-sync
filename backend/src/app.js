@@ -1,6 +1,8 @@
 import express, { json, urlencoded } from 'express';
 import dotenv from 'dotenv';
 import session from 'express-session';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import Database from './services/database.js';
 import FitbitService from './services/fitbit-service.js';
 import AuthService from './services/auth.js';
@@ -14,22 +16,22 @@ import fs from 'fs';
 
 dotenv.config();
 
+// Entry point for backend server. Sets up Express app, security, session, routes, and HTTPS.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 443;
 
-// Ensure JWT_SECRET is set
 if (!process.env.JWT_SECRET) {
   console.error('ERROR: JWT_SECRET environment variable is required');
   process.exit(1);
 }
 
-// Security headers middleware
+// Security headers for all responses
 app.use((req, res, next) => {
-  // Content Security Policy - configurable via environment variables
   const scriptSrc = process.env.CSP_SCRIPT_SRC || "'self' 'unsafe-inline'";
   const styleSrc = process.env.CSP_STYLE_SRC || "'self' 'unsafe-inline'";
   const connectSrc = process.env.CSP_CONNECT_SRC || "'self' https://api.fitbit.com https://www.fitbit.com https://login.microsoftonline.com";
-  
   const cspPolicy = [
     "default-src 'self'",
     `script-src ${scriptSrc}`,
@@ -37,30 +39,23 @@ app.use((req, res, next) => {
     "img-src 'self' data: https:",
     "font-src 'self'",
     `connect-src ${connectSrc}`,
-    "frame-ancestors 'none'", // Prevent clickjacking
+    "frame-ancestors 'none'",
     "form-action 'self' https://www.fitbit.com https://login.microsoftonline.com",
     "base-uri 'self'",
     "object-src 'none'"
   ].join('; ');
-  
   res.setHeader('Content-Security-Policy', cspPolicy);
-  
-  // Additional security headers
-  res.setHeader('X-Content-Type-Options', 'nosniff'); // Prevent MIME type sniffing
-  res.setHeader('X-Frame-Options', 'DENY'); // Prevent clickjacking
-  res.setHeader('X-XSS-Protection', '1; mode=block'); // XSS protection
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin'); // Control referrer information
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()'); // Restrict browser features
-  
-  // HSTS (HTTP Strict Transport Security) - always enabled for HTTPS
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
   }
-  
   next();
 });
 
-// Read TLS cert and key for development only
 let httpsOptions = null;
 const isDevelopment = process.env.NODE_ENV !== 'production';
 
@@ -73,14 +68,13 @@ if (isDevelopment) {
     console.log('Using self-signed certificates for development');
   } catch (error) {
     console.error('ERROR: Could not read SSL certificates for development.');
-    console.error('Make sure server.key and server.cert exist for HTTPS development server.');
-    console.error('HTTPS is required for Fitbit OAuth to work properly.');
     httpsOptions = null;
   }
 }
 
 let db, fitbitService, authService;
 
+// Initialize database and services
 async function initializeServices() {
   db = new Database();
   await db.initialize();
@@ -89,27 +83,28 @@ async function initializeServices() {
   app.use(authService.blockSensitiveFiles());
   app.use(authService.corsMiddleware());
   app.use(authService.createRateLimiter());
-  console.log('Services initialized');
 }
 
 app.use(json());
 app.use(urlencoded({ extended: true }));
 app.set('trust proxy', 1);
 
+// Session configuration for secure cookies
 app.use(session({
   secret: process.env.JWT_SECRET,
   resave: false,
   saveUninitialized: false,
-  name: '__Host-session', // Use secure cookie prefix for HTTPS
+  name: '__Host-session',
   cookie: {
-    secure: true, // Always require HTTPS
+    secure: true,
     httpOnly: true,
-    sameSite: 'strict', // Prevent CSRF attacks
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: 'strict',
+    maxAge: 24 * 60 * 60 * 1000,
     path: '/'
   }
 }));
 
+// Track session creation time
 app.use((req, res, next) => {
   if (req.session && !req.session.createdAt) {
     req.session.createdAt = Date.now();
@@ -117,47 +112,45 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use('/health', createHealthRoutes());
-app.use('/', createRootRoutes());
+// Serve static frontend files
+app.use(express.static(path.join(__dirname, '../../frontend/public')));
+app.use('/src', express.static(path.join(__dirname, '../../frontend/src')));
 
+// Register API and auth routes
 function setupRoutes() {
   app.use('/auth', createAuthRoutes({ fitbitService, authService, db }));
   app.use('/api', createApiRoutes({ db, fitbitService, authService }));
 }
 
+// Handle graceful shutdown
 function setupGracefulShutdown() {
   process.on('SIGINT', () => {
-    console.log('Shutting down gracefully...');
     if (db) db.close();
     process.exit(0);
   });
   process.on('SIGTERM', () => {
-    console.log('Shutting down gracefully...');
     if (db) db.close();
     process.exit(0);
   });
 }
 
+// Start server and background sync
 async function startServer() {
   try {
     await initializeServices();
     setupRoutes();
     setupBackgroundSync({ fitbitService, db });
     setupGracefulShutdown();
-    
     if (isDevelopment) {
-      // Development: Use HTTPS with self-signed certificates
       if (httpsOptions) {
         https.createServer(httpsOptions, app).listen(PORT, () => {
           console.log(`HTTPS server running`);
         });
       } else {
         console.error('ERROR: HTTPS certificates are required for development but could not be loaded.');
-        console.error('Please ensure server.key and server.cert exist in the project root.');
         process.exit(1);
       }
     } else {
-      // Production: Use HTTPS with managed certificates
       https.createServer(app).listen(PORT, () => {
         console.log(`HTTPS server running on port ${PORT}`);
       });

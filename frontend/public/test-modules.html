@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Module Test</title>
+</head>
+<body>
+    <h1>Testing Fitbit Sync Modules</h1>
+    <div id="test-results"></div>
+    <script type="module">
+        import { Utils } from './js/utils.js';
+        import { ApiClient } from './js/api-client.js';
+        import { NotificationManager } from './js/notification-manager.js';
+        
+        const results = document.getElementById('test-results');
+        
+        try {
+            // Test Utils
+            const testDate = new Date('2023-01-01');
+            const formattedDate = Utils.formatDateForInput(testDate);
+            results.innerHTML += `<p>PASS: Utils.formatDateForInput: ${formattedDate}</p>`;
+            
+            // Test ApiClient
+            const apiClient = new ApiClient();
+            results.innerHTML += `<p>PASS: ApiClient created successfully</p>`;
+            
+            // Test NotificationManager
+            const notificationManager = new NotificationManager();
+            results.innerHTML += `<p>PASS: NotificationManager created successfully</p>`;
+            
+            results.innerHTML += `<p>All modules loaded successfully!</p>`;
+        } catch (error) {
+            results.innerHTML += `<p>FAIL: Error: ${error.message}</p>`;
+        }
+    </script>
+</body>
+</html>

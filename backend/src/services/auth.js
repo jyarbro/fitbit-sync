@@ -1,7 +1,14 @@
+/**
+ * Service for authentication, JWT, and OAuth logic.
+ * @module backend/services/auth
+ */
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import axios from 'axios';
 
+/**
+ * Authentication, JWT, and OAuth logic for Fitbit Sync.
+ */
 class AuthService {
   constructor() {
     this.jwtSecret = process.env.JWT_SECRET;

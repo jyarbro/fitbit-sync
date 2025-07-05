@@ -1,5 +1,12 @@
+/**
+ * Service for Fitbit API integration and token management.
+ * @module backend/services/fitbit-service
+ */
 import axios from 'axios';
 
+/**
+ * Fitbit API integration and token management.
+ */
 class FitbitService {
   constructor(database) {
     this.db = database;
@@ -120,7 +127,7 @@ class FitbitService {
       console.log(`API Request to ${endpoint} - Rate Limit Status: ${rateLimitInfo.remaining}/${rateLimitInfo.limit} remaining (${rateLimitInfo.used} used), resets in ${rateLimitInfo.resetIn}s at ${new Date(rateLimitInfo.resetTime).toLocaleString()}`);
       
       if (rateLimitInfo.remaining < 20) {
-        console.warn(`⚠️  Rate limit getting low: ${rateLimitInfo.remaining}/${rateLimitInfo.limit} remaining (${rateLimitInfo.used} used), resets in ${rateLimitInfo.resetIn}s at ${new Date(rateLimitInfo.resetTime).toLocaleString()}`);
+        console.warn(`WARNING: Rate limit getting low: ${rateLimitInfo.remaining}/${rateLimitInfo.limit} remaining (${rateLimitInfo.used} used), resets in ${rateLimitInfo.resetIn}s at ${new Date(rateLimitInfo.resetTime).toLocaleString()}`);
       }
 
       return { data: response.data, rateLimitInfo };
