@@ -125,6 +125,8 @@ app.use('/src', express.static(path.join(__dirname, '../../frontend/src')));
 
 // Register API and auth routes
 function setupRoutes() {
+  app.use('/', createRootRoutes());
+  app.use('/health', createHealthRoutes());
   app.use('/auth', createAuthRoutes({ fitbitService, authService, db }));
   app.use('/api', createApiRoutes({ db, fitbitService, authService }));
 }
