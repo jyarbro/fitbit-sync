@@ -201,6 +201,14 @@ class Database {
 
   async updateSyncLog(dataType, lastSyncTime, status, rateLimitInfo = {}, errorMessage = null) {
     return new Promise((resolve, reject) => {
+      // Convert resetIn (seconds until reset) to actual reset timestamp
+      let resetTimestamp = null;
+      if (rateLimitInfo.resetIn) {
+        resetTimestamp = Date.now() + (rateLimitInfo.resetIn * 1000);
+      } else if (rateLimitInfo.resetTime) {
+        resetTimestamp = rateLimitInfo.resetTime;
+      }
+      
       this.db.run(
         `INSERT INTO sync_log (data_type, last_sync_time, status, rate_limit_remaining, rate_limit_reset, error_message)
          VALUES (?, ?, ?, ?, ?, ?)`,
@@ -209,7 +217,7 @@ class Database {
           lastSyncTime, 
           status, 
           rateLimitInfo.remaining || null,
-          rateLimitInfo.resetIn || null,
+          resetTimestamp, // Store actual timestamp when it resets
           errorMessage
         ],
         function(err) {
@@ -242,12 +250,38 @@ class Database {
   async getRateLimitStatus() {
     return new Promise((resolve, reject) => {
       this.db.get(
-        'SELECT rate_limit_remaining, rate_limit_reset FROM sync_log WHERE rate_limit_remaining IS NOT NULL ORDER BY created_at DESC LIMIT 1',
+        'SELECT rate_limit_remaining, rate_limit_reset, created_at FROM sync_log WHERE rate_limit_remaining IS NOT NULL ORDER BY created_at DESC LIMIT 1',
         (err, row) => {
           if (err) {
             reject(err);
           } else {
-            resolve(row || { rate_limit_remaining: 150, rate_limit_reset: 0 });
+            if (!row) {
+              console.log(`💾 No rate limit data in database, using defaults: 150 remaining`);
+              resolve({ rate_limit_remaining: 150, rate_limit_reset: 0 });
+              return;
+            }
+            
+            const now = Date.now();
+            const resetTimestamp = row.rate_limit_reset;
+            
+            // Check if the rate limit has reset since we last stored data
+            if (resetTimestamp && now >= resetTimestamp) {
+              console.log(`💾 Rate limit has reset since last record (${new Date(resetTimestamp).toLocaleString()}), using fresh 150 remaining`);
+              resolve({ rate_limit_remaining: 150, rate_limit_reset: 0 });
+              return;
+            }
+            
+            // Calculate seconds until reset
+            const secondsUntilReset = resetTimestamp ? Math.max(0, Math.floor((resetTimestamp - now) / 1000)) : 0;
+            
+            const result = {
+              rate_limit_remaining: row.rate_limit_remaining,
+              rate_limit_reset: secondsUntilReset
+            };
+            
+            console.log(`💾 Database rate limit status (from ${row.created_at}): ${result.rate_limit_remaining} remaining, resets in ${result.rate_limit_reset}s at ${resetTimestamp ? new Date(resetTimestamp).toLocaleString() : 'unknown'}`);
+            
+            resolve(result);
           }
         }
       );

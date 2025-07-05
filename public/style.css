@@ -55,6 +55,56 @@ body {
     border-radius: 50%;
 }
 
+.error-banner.rate-limit-error {
+    background-color: #fff4e6;
+    border: 1px solid #ffa726;
+    color: #e65100;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 16px;
+}
+
+.error-banner.rate-limit-error .close-btn {
+    align-self: flex-end;
+    color: #e65100;
+}
+
+.error-banner.rate-limit-error .close-btn:hover {
+    background-color: rgba(230, 81, 0, 0.1);
+}
+
+.error-main {
+    font-weight: 600;
+    margin-bottom: 12px;
+    font-size: 14px;
+}
+
+.rate-limit-details {
+    background-color: #fff8f0;
+    border: 1px solid #ffcc80;
+    border-radius: 4px;
+    padding: 12px;
+    margin-top: 8px;
+}
+
+.rate-limit-header {
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #bf360c;
+    font-size: 13px;
+}
+
+.rate-limit-item {
+    margin: 4px 0;
+    font-size: 12px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+.rate-limit-item strong {
+    color: #d84315;
+    font-weight: 600;
+}
+
 /* Header */
 .header {
     background: white;
@@ -367,6 +417,95 @@ body {
 #page-info {
     font-weight: 500;
     color: #666;
+}
+
+/* Rate Limit Status */
+.rate-limit-status {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+.status-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 12px;
+}
+
+.status-header h3 {
+    color: #2c3e50;
+    font-size: 18px;
+    margin: 0;
+}
+
+.btn-small {
+    padding: 6px 12px;
+    font-size: 12px;
+}
+
+.status-content {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+}
+
+.status-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    border: 1px solid #e9ecef;
+}
+
+.status-label {
+    font-weight: 600;
+    color: #495057;
+    font-size: 13px;
+}
+
+.status-badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.status-badge.status-healthy {
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.status-badge.status-warning {
+    background-color: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeaa7;
+}
+
+.status-badge.status-critical {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.status-badge.status-error {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.status-badge.status-unknown {
+    background-color: #e2e3e5;
+    color: #383d41;
+    border: 1px solid #d6d8db;
 }
 
 /* Responsive Design */

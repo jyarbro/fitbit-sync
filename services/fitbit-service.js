@@ -84,10 +84,21 @@ class FitbitService {
   }
 
   extractRateLimitInfo(response) {
+    const remaining = parseInt(response.headers['fitbit-rate-limit-remaining']) || 0;
+    const resetIn = parseInt(response.headers['fitbit-rate-limit-reset']) || 0;
+    const limit = parseInt(response.headers['fitbit-rate-limit-limit']) || 150;
+    
+    // Calculate the actual reset time (top of next hour)
+    const now = new Date();
+    const resetTime = new Date(now);
+    resetTime.setHours(now.getHours() + 1, 0, 0, 0); // Next hour at :00:00
+    
     return {
-      remaining: parseInt(response.headers['fitbit-rate-limit-remaining']) || 0,
-      resetIn: parseInt(response.headers['fitbit-rate-limit-reset']) || 0,
-      limit: parseInt(response.headers['fitbit-rate-limit-limit']) || 150
+      remaining,
+      resetIn, // Seconds until reset (from Fitbit)
+      limit,
+      resetTime: resetTime.getTime(), // Actual timestamp when it resets
+      used: limit - remaining
     };
   }
 
@@ -105,17 +116,34 @@ class FitbitService {
 
       const rateLimitInfo = this.extractRateLimitInfo(response);
       
-      // Log rate limit status
+      // Log detailed rate limit status
+      console.log(`API Request to ${endpoint} - Rate Limit Status: ${rateLimitInfo.remaining}/${rateLimitInfo.limit} remaining (${rateLimitInfo.used} used), resets in ${rateLimitInfo.resetIn}s at ${new Date(rateLimitInfo.resetTime).toLocaleString()}`);
+      
       if (rateLimitInfo.remaining < 20) {
-        console.warn(`Rate limit low: ${rateLimitInfo.remaining}/${rateLimitInfo.limit} remaining, resets in ${rateLimitInfo.resetIn}s`);
+        console.warn(`⚠️  Rate limit getting low: ${rateLimitInfo.remaining}/${rateLimitInfo.limit} remaining (${rateLimitInfo.used} used), resets in ${rateLimitInfo.resetIn}s at ${new Date(rateLimitInfo.resetTime).toLocaleString()}`);
       }
 
       return { data: response.data, rateLimitInfo };
     } catch (error) {
       if (error.response?.status === 429) {
-        const resetTime = error.response.headers['fitbit-rate-limit-reset'];
-        console.error(`Rate limit exceeded. Resets in ${resetTime} seconds`);
-        throw new Error(`Rate limit exceeded. Try again in ${resetTime} seconds`);
+        const rateLimitHeaders = {
+          remaining: parseInt(error.response.headers['fitbit-rate-limit-remaining']) || 0,
+          limit: parseInt(error.response.headers['fitbit-rate-limit-limit']) || 150,
+          resetIn: parseInt(error.response.headers['fitbit-rate-limit-reset']) || 0
+        };
+        
+        const used = rateLimitHeaders.limit - rateLimitHeaders.remaining;
+        const now = new Date();
+        const resetTime = new Date(now);
+        resetTime.setHours(now.getHours() + 1, 0, 0, 0);
+        
+        console.error(`🚫 Rate limit exceeded on ${endpoint}:`);
+        console.error(`   Current usage: ${used}/${rateLimitHeaders.limit} requests used`);
+        console.error(`   Remaining: ${rateLimitHeaders.remaining} requests`);
+        console.error(`   Reset in: ${rateLimitHeaders.resetIn} seconds`);
+        console.error(`   Reset at: ${resetTime.toLocaleString()}`);
+        
+        throw new Error(`Rate limit exceeded. Used ${used}/${rateLimitHeaders.limit} requests. ${rateLimitHeaders.remaining} remaining. Resets in ${rateLimitHeaders.resetIn} seconds (${resetTime.toLocaleString()})`);
       }
       
       if (error.response?.status === 401) {
@@ -302,17 +330,8 @@ class FitbitService {
       
       const dataset = response.data['activities-heart-intraday']?.dataset || [];
       
-      for (const dataPoint of dataset) {
-        const heartRate = parseInt(dataPoint.value);
-        if (heartRate > 0) {
-          const timestamp = new Date(`${today}T${dataPoint.time}`);
-          samples.push({
-            type: 'heartRate',
-            value: heartRate,
-            datetime: timestamp.toISOString()
-          });
-        }
-      }
+      const heartRateSamples = this.processHeartRateData(dataset, today);
+      samples.push(...heartRateSamples);
       
       if (samples.length > 0) {
         await this.db.storeSamples(samples);
@@ -337,6 +356,161 @@ class FitbitService {
       );
       throw error;
     }
+  }
+
+  processHeartRateData(dataset, dateStr) {
+    const samples = [];
+    let currentBlock = null;
+    const normalBlockMinutes = 30; // 30 minutes for stable periods
+    const exertionBlockMinutes = 5; // 5 minutes during exertion
+    const deviationThreshold = 15; // BPM threshold for detecting exertion
+    const minBlockMinutes = 3; // Minimum block size to avoid too small blocks
+    
+    // First pass: calculate rolling baseline to detect exertion periods
+    const rollingWindow = 10; // 10-minute window for baseline calculation
+    const baselines = [];
+    
+    for (let i = 0; i < dataset.length; i++) {
+      const dataPoint = dataset[i];
+      const heartRate = parseInt(dataPoint.value);
+      
+      if (heartRate > 0) {
+        // Calculate baseline from surrounding data
+        const windowStart = Math.max(0, i - rollingWindow);
+        const windowEnd = Math.min(dataset.length, i + rollingWindow);
+        
+        let sum = 0;
+        let count = 0;
+        
+        for (let j = windowStart; j < windowEnd; j++) {
+          const hr = parseInt(dataset[j].value);
+          if (hr > 0) {
+            sum += hr;
+            count++;
+          }
+        }
+        
+        const baseline = count > 0 ? sum / count : heartRate;
+        baselines[i] = { heartRate, baseline, isExertion: Math.abs(heartRate - baseline) > deviationThreshold };
+      } else {
+        baselines[i] = { heartRate: 0, baseline: 0, isExertion: false };
+      }
+    }
+    
+    // Second pass: create blocks based on exertion detection
+    for (let i = 0; i < dataset.length; i++) {
+      const dataPoint = dataset[i];
+      const analysis = baselines[i];
+      const timestamp = new Date(`${dateStr}T${dataPoint.time}`);
+      
+      if (analysis.heartRate > 0) {
+        const targetBlockSize = analysis.isExertion ? exertionBlockMinutes : normalBlockMinutes;
+        
+        if (!currentBlock) {
+          // Start new block
+          currentBlock = {
+            startTime: timestamp,
+            endTime: timestamp,
+            heartRates: [analysis.heartRate],
+            minutes: 1,
+            isExertionBlock: analysis.isExertion,
+            targetSize: targetBlockSize
+          };
+        } else {
+          // Check if we should continue current block or start new one
+          const blockTypeChanged = (currentBlock.isExertionBlock !== analysis.isExertion);
+          const blockSizeReached = currentBlock.minutes >= currentBlock.targetSize;
+          const minSizeReached = currentBlock.minutes >= minBlockMinutes;
+          
+          if (blockTypeChanged && minSizeReached) {
+            // Block type changed (exertion <-> normal), finish current block
+            const averageHR = Math.round(currentBlock.heartRates.reduce((sum, hr) => sum + hr, 0) / currentBlock.heartRates.length);
+            samples.push({
+              type: 'heartRate',
+              value: averageHR,
+              datetime: currentBlock.endTime.toISOString()
+            });
+            
+            // Start new block with current type
+            currentBlock = {
+              startTime: timestamp,
+              endTime: timestamp,
+              heartRates: [analysis.heartRate],
+              minutes: 1,
+              isExertionBlock: analysis.isExertion,
+              targetSize: targetBlockSize
+            };
+          } else if (blockSizeReached) {
+            // Block size reached, finish current block
+            const averageHR = Math.round(currentBlock.heartRates.reduce((sum, hr) => sum + hr, 0) / currentBlock.heartRates.length);
+            samples.push({
+              type: 'heartRate',
+              value: averageHR,
+              datetime: currentBlock.endTime.toISOString()
+            });
+            
+            // Start new block
+            currentBlock = {
+              startTime: timestamp,
+              endTime: timestamp,
+              heartRates: [analysis.heartRate],
+              minutes: 1,
+              isExertionBlock: analysis.isExertion,
+              targetSize: targetBlockSize
+            };
+          } else {
+            // Continue current block
+            currentBlock.endTime = timestamp;
+            currentBlock.heartRates.push(analysis.heartRate);
+            currentBlock.minutes++;
+            
+            // Update block type if we're transitioning and haven't reached min size yet
+            if (!minSizeReached) {
+              currentBlock.isExertionBlock = analysis.isExertion;
+              currentBlock.targetSize = targetBlockSize;
+            }
+          }
+        }
+      } else {
+        // Zero/invalid heart rate - check if we should end current block
+        if (currentBlock) {
+          // Count consecutive zero readings
+          let zeroCount = 0;
+          const gapThreshold = 5; // 5 minutes of missing data ends a block
+          
+          for (let j = i; j < Math.min(i + gapThreshold, dataset.length); j++) {
+            if (parseInt(dataset[j].value) === 0) {
+              zeroCount++;
+            } else {
+              break;
+            }
+          }
+          
+          // End block if significant gap ahead and minimum size reached
+          if (zeroCount >= gapThreshold && currentBlock.minutes >= minBlockMinutes) {
+            const averageHR = Math.round(currentBlock.heartRates.reduce((sum, hr) => sum + hr, 0) / currentBlock.heartRates.length);
+            samples.push({
+              type: 'heartRate',
+              value: averageHR,
+              datetime: currentBlock.endTime.toISOString()
+            });
+            currentBlock = null;
+          }
+        }
+      }
+    }
+    
+    // Don't forget the last block
+    if (currentBlock && currentBlock.minutes >= minBlockMinutes) {
+      const averageHR = Math.round(currentBlock.heartRates.reduce((sum, hr) => sum + hr, 0) / currentBlock.heartRates.length);
+      samples.push({
+        type: 'heartRate',
+        value: averageHR,
+        datetime: currentBlock.endTime.toISOString()
+      });
+    }
+    
+    return samples;
   }
 
   async syncSleepData(dateStr = null) {
@@ -511,9 +685,21 @@ class FitbitService {
     try {
       // Check rate limit before starting
       const rateLimitStatus = await this.db.getRateLimitStatus();
-
+      
+      console.log(`📊 Pre-sync rate limit check: ${rateLimitStatus.rate_limit_remaining} requests remaining`);
+      
       if (rateLimitStatus.rate_limit_remaining < 10) {
-        throw new Error(`Rate limit too low: ${rateLimitStatus.rate_limit_remaining} requests remaining`);
+        const resetTime = rateLimitStatus.rate_limit_reset;
+        const resetDate = resetTime > 0 ? new Date(Date.now() + resetTime * 1000) : new Date();
+        resetDate.setHours(resetDate.getHours() + 1, 0, 0, 0); // Next hour if no specific reset time
+        
+        console.error(`🚫 Rate limit too low for sync operation:`);
+        console.error(`   Current remaining: ${rateLimitStatus.rate_limit_remaining} requests`);
+        console.error(`   Minimum required: 10 requests`);
+        console.error(`   Reset time: ${resetTime} seconds`);
+        console.error(`   Reset at: ${resetDate.toLocaleString()}`);
+        
+        throw new Error(`Rate limit too low: ${rateLimitStatus.rate_limit_remaining} requests remaining (need at least 10). Rate limit resets in ${resetTime} seconds at ${resetDate.toLocaleString()}`);
       }
 
       // Determine which data types to sync
@@ -557,9 +743,25 @@ class FitbitService {
       // Check rate limit before starting
       const rateLimitStatus = await this.db.getRateLimitStatus();
       const requiredRequests = dates.length * 4; // Approximate requests per date
+      
+      console.log(`📊 Pre-sync rate limit check for date range:`);
+      console.log(`   Date range: ${startDate} to ${endDate} (${dates.length} days)`);
+      console.log(`   Current remaining: ${rateLimitStatus.rate_limit_remaining} requests`);
+      console.log(`   Estimated required: ${requiredRequests} requests`);
 
       if (rateLimitStatus.rate_limit_remaining < requiredRequests) {
-        throw new Error(`Rate limit too low: ${rateLimitStatus.rate_limit_remaining} requests remaining, need approximately ${requiredRequests}`);
+        const resetTime = rateLimitStatus.rate_limit_reset;
+        const resetDate = resetTime > 0 ? new Date(Date.now() + resetTime * 1000) : new Date();
+        resetDate.setHours(resetDate.getHours() + 1, 0, 0, 0); // Next hour if no specific reset time
+        
+        console.error(`🚫 Rate limit too low for date range sync operation:`);
+        console.error(`   Current remaining: ${rateLimitStatus.rate_limit_remaining} requests`);
+        console.error(`   Required for operation: ${requiredRequests} requests`);
+        console.error(`   Shortfall: ${requiredRequests - rateLimitStatus.rate_limit_remaining} requests`);
+        console.error(`   Reset time: ${resetTime} seconds`);
+        console.error(`   Reset at: ${resetDate.toLocaleString()}`);
+        
+        throw new Error(`Rate limit too low: ${rateLimitStatus.rate_limit_remaining} requests remaining, need approximately ${requiredRequests} for ${dates.length} days. Shortfall: ${requiredRequests - rateLimitStatus.rate_limit_remaining} requests. Rate limit resets in ${resetTime} seconds at ${resetDate.toLocaleString()}`);
       }
 
       // Determine which data types to sync

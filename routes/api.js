@@ -157,9 +157,54 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
                         error.response?.status === 401 ? 401 : 
                         error.message.includes('Rate limit') ? 429 : 500;
       
-      // Add user-friendly message
+      // Add user-friendly message with detailed rate limit info
       if (statusCode === 429) {
-        errorResponse.error = 'Rate limit exceeded, please try again later';
+        // Try to extract rate limit details from the error message (multiple patterns)
+        let rateLimitMatch = error.message.match(/Used (\d+)\/(\d+) requests\. (\d+) remaining\. Resets in (\d+) seconds/);
+        
+        if (rateLimitMatch) {
+          const [, used, total, remaining, resetTime] = rateLimitMatch;
+          const resetDate = new Date(Date.now() + parseInt(resetTime) * 1000);
+          errorResponse.error = `Rate limit exceeded: ${used}/${total} requests used, ${remaining} remaining. Resets in ${resetTime} seconds (${resetDate.toLocaleString()})`;
+          errorResponse.rateLimitInfo = {
+            used: parseInt(used),
+            total: parseInt(total),
+            remaining: parseInt(remaining),
+            resetTime: parseInt(resetTime),
+            resetDate: resetDate.toISOString()
+          };
+        } else {
+          // Try alternative patterns for other rate limit errors
+          const simpleLimitMatch = error.message.match(/Rate limit too low: (\d+) requests remaining.*?resets in (\d+) seconds at (.+)/);
+          const rangeLimitMatch = error.message.match(/Rate limit too low: (\d+) requests remaining, need approximately (\d+).*?resets in (\d+) seconds at (.+)/);
+          
+          if (rangeLimitMatch) {
+            const [, remaining, needed, resetTime, resetDateStr] = rangeLimitMatch;
+            const resetDate = new Date(resetDateStr);
+            errorResponse.error = `Rate limit too low: ${remaining} requests remaining, need ${needed}. Resets in ${resetTime} seconds (${resetDate.toLocaleString()})`;
+            errorResponse.rateLimitInfo = {
+              used: 150 - parseInt(remaining),
+              total: 150,
+              remaining: parseInt(remaining),
+              needed: parseInt(needed),
+              resetTime: parseInt(resetTime),
+              resetDate: resetDate.toISOString()
+            };
+          } else if (simpleLimitMatch) {
+            const [, remaining, resetTime, resetDateStr] = simpleLimitMatch;
+            const resetDate = new Date(resetDateStr);
+            errorResponse.error = `Rate limit too low: ${remaining} requests remaining (need at least 10). Resets in ${resetTime} seconds (${resetDate.toLocaleString()})`;
+            errorResponse.rateLimitInfo = {
+              used: 150 - parseInt(remaining),
+              total: 150,
+              remaining: parseInt(remaining),
+              resetTime: parseInt(resetTime),
+              resetDate: resetDate.toISOString()
+            };
+          } else {
+            errorResponse.error = 'Rate limit exceeded, please try again later';
+          }
+        }
       } else if (statusCode === 401) {
         errorResponse.error = 'Authentication required or credentials expired';
       }
@@ -172,8 +217,29 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
     try {
       const rateLimitStatus = await db.getRateLimitStatus();
       const tokens = await db.getTokens();
+      
+      // Enhanced rate limit information
+      const now = Date.now();
+      const resetTimestamp = rateLimitStatus.rate_limit_reset > 0 ? 
+        now + (rateLimitStatus.rate_limit_reset * 1000) : null;
+      
+      const enhancedRateLimit = {
+        remaining: rateLimitStatus.rate_limit_remaining,
+        used: 150 - rateLimitStatus.rate_limit_remaining,
+        total: 150,
+        percentageUsed: Math.round(((150 - rateLimitStatus.rate_limit_remaining) / 150) * 100),
+        resetIn: rateLimitStatus.rate_limit_reset,
+        resetDate: resetTimestamp ? new Date(resetTimestamp).toISOString() : null,
+        resetDateFormatted: resetTimestamp ? new Date(resetTimestamp).toLocaleString() : null,
+        status: rateLimitStatus.rate_limit_remaining > 50 ? 'healthy' : 
+                rateLimitStatus.rate_limit_remaining > 20 ? 'warning' : 'critical',
+        isStale: rateLimitStatus.rate_limit_reset === 0 // No reset time means data might be default/stale
+      };
+      
+      console.log(`📊 Status endpoint called - Rate limit: ${enhancedRateLimit.remaining}/150 (${enhancedRateLimit.percentageUsed}% used, ${enhancedRateLimit.status})${enhancedRateLimit.isStale ? ' [STALE DATA]' : ''}`);
+      
       res.json({
-        rateLimit: rateLimitStatus,
+        rateLimit: enhancedRateLimit,
         tokenExpiry: tokens ? new Date(tokens.expires_at).toISOString() : null,
         scopes: fitbitService.scopes,
         lastSync: {

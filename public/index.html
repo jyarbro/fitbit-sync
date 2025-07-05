@@ -147,6 +147,32 @@
                 <button id="next-page" class="btn btn-small" disabled>Next</button>
             </div>
         </section>
+
+        <!-- Rate Limit Status -->
+        <section class="rate-limit-status" id="rate-limit-status">
+            <div class="status-header">
+                <h3>Rate Limit Status</h3>
+                <button id="refresh-status-btn" class="btn btn-secondary btn-small">Refresh</button>
+            </div>
+            <div class="status-content">
+                <div class="status-item">
+                    <span class="status-label">Usage:</span>
+                    <span id="rate-limit-usage">Loading...</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Remaining:</span>
+                    <span id="rate-limit-remaining">Loading...</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Status:</span>
+                    <span id="rate-limit-health" class="status-badge">Loading...</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Reset Date:</span>
+                    <span id="rate-limit-reset">Loading...</span>
+                </div>
+            </div>
+        </section>
     </div>
 
     <script src="script.js"></script>

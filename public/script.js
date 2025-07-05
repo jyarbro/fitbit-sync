@@ -39,8 +39,17 @@ const selectAllCheckbox = document.getElementById('select-all-checkbox');
 const headerSelectAll = document.getElementById('header-select-all');
 const deleteSelectedBtn = document.getElementById('delete-selected-btn');
 
+// Rate limit status elements
+const rateLimitStatus = document.getElementById('rate-limit-status');
+const refreshStatusBtn = document.getElementById('refresh-status-btn');
+const rateLimitUsage = document.getElementById('rate-limit-usage');
+const rateLimitRemaining = document.getElementById('rate-limit-remaining');
+const rateLimitHealth = document.getElementById('rate-limit-health');
+const rateLimitReset = document.getElementById('rate-limit-reset');
+
 document.addEventListener('DOMContentLoaded', async () => {
     await checkAuthStatus();
+    await loadRateLimitStatus();
     await loadSampleTypes();
     await loadSamples();
     setupEventListeners();
@@ -83,15 +92,41 @@ function setupEventListeners() {
     samplesTable.querySelectorAll('th[data-sort]').forEach(th => {
         th.addEventListener('click', () => sortTable(th.dataset.sort));
     });
+    
+    refreshStatusBtn.addEventListener('click', loadRateLimitStatus);
 }
 
-function showError(message) {
-    errorMessage.textContent = message;
+function showError(message, rateLimitInfo = null) {
+    // If we have detailed rate limit info, enhance the message
+    if (rateLimitInfo) {
+        const resetDate = new Date(rateLimitInfo.resetDate);
+        const usagePercentage = Math.round((rateLimitInfo.used / rateLimitInfo.total) * 100);
+        
+        const detailedMessage = `
+            <div class="error-main">${message}</div>
+            <div class="rate-limit-details">
+                <div class="rate-limit-header">📊 Rate Limit Details:</div>
+                <div class="rate-limit-item"><strong>Usage:</strong> ${rateLimitInfo.used}/${rateLimitInfo.total} requests (${usagePercentage}%)</div>
+                <div class="rate-limit-item"><strong>Remaining:</strong> ${rateLimitInfo.remaining} requests</div>
+                ${rateLimitInfo.needed ? `<div class="rate-limit-item"><strong>Needed:</strong> ${rateLimitInfo.needed} requests</div>` : ''}
+                <div class="rate-limit-item"><strong>Reset Time:</strong> ${rateLimitInfo.resetTime} seconds</div>
+                <div class="rate-limit-item"><strong>Reset Date:</strong> ${resetDate.toLocaleString()}</div>
+            </div>
+        `;
+        
+        errorMessage.innerHTML = detailedMessage;
+        errorBanner.classList.add('rate-limit-error');
+    } else {
+        errorMessage.textContent = message;
+        errorBanner.classList.remove('rate-limit-error');
+    }
+    
     errorBanner.classList.remove('hidden');
 }
 
 function hideError() {
     errorBanner.classList.add('hidden');
+    errorBanner.classList.remove('rate-limit-error');
 }
 
 async function apiCall(url, options = {}) {
@@ -115,7 +150,19 @@ async function apiCall(url, options = {}) {
                 });
             }
             
-            throw new Error(errorData.error || `HTTP ${response.status}`);
+            // Log detailed rate limit information if available
+            if (errorData.rateLimitInfo) {
+                console.error('🚫 Rate Limit Details:', errorData.rateLimitInfo);
+                console.error(`   Usage: ${errorData.rateLimitInfo.used}/${errorData.rateLimitInfo.total} requests`);
+                console.error(`   Remaining: ${errorData.rateLimitInfo.remaining} requests`);
+                console.error(`   Reset time: ${errorData.rateLimitInfo.resetTime} seconds`);
+                console.error(`   Reset date: ${new Date(errorData.rateLimitInfo.resetDate).toLocaleString()}`);
+            }
+            
+            // Create enhanced error with rate limit info
+            const error = new Error(errorData.error || `HTTP ${response.status}`);
+            error.rateLimitInfo = errorData.rateLimitInfo;
+            throw error;
         }
         
         return await response.json();
@@ -135,7 +182,7 @@ async function checkAuthStatus() {
             window.location.href = '/auth/login';
             return;
         }
-        showError('Failed to check authentication status: ' + error.message);
+        showError('Failed to check authentication status: ' + error.message, error.rateLimitInfo);
     }
 }
 
@@ -151,7 +198,7 @@ async function generateJWT() {
         
         showSuccess('JWT token generated successfully!');
     } catch (error) {
-        showError('Failed to generate JWT: ' + error.message);
+        showError('Failed to generate JWT: ' + error.message, error.rateLimitInfo);
     } finally {
         generateJwtBtn.disabled = false;
         generateJwtBtn.textContent = 'Generate New JWT';
@@ -176,7 +223,7 @@ async function refreshFitbitTokens() {
         
         window.location.href = '/auth/refreshtokens';
     } catch (error) {
-        showError('Failed to refresh Fitbit tokens: ' + error.message);
+        showError('Failed to refresh Fitbit tokens: ' + error.message, error.rateLimitInfo);
         refreshFitbitBtn.disabled = false;
         refreshFitbitBtn.textContent = 'Refresh Fitbit Tokens';
     }
@@ -230,7 +277,7 @@ async function loadSamples() {
             window.location.href = '/auth/login';
             return;
         }
-        showError('Failed to load samples: ' + error.message);
+        showError('Failed to load samples: ' + error.message, error.rateLimitInfo);
         samplesTbody.innerHTML = '<tr><td colspan="3">Failed to load samples</td></tr>';
     } finally {
         showLoading(false);
@@ -482,11 +529,12 @@ async function performDateSync() {
         
         showSuccess(successMessage);
         
-        // Refresh the samples table to show new data
+        // Refresh the samples table and rate limit status to show new data
         await loadSamples();
+        await loadRateLimitStatus();
         
     } catch (error) {
-        showError('Failed to perform date sync: ' + error.message);
+        showError('Failed to perform date sync: ' + error.message, error.rateLimitInfo);
     } finally {
         startSync.disabled = false;
         startSync.textContent = 'Start Sync';
@@ -610,7 +658,7 @@ async function deleteSelectedSamples() {
         
     } catch (error) {
         console.error('Delete error:', error);
-        showError('Failed to delete samples: ' + error.message);
+        showError('Failed to delete samples: ' + error.message, error.rateLimitInfo);
     } finally {
         deleteSelectedBtn.disabled = false;
         updateSelectionState();
@@ -621,3 +669,40 @@ async function deleteSelectedSamples() {
 window.addEventListener('popstate', () => {
     loadSamples();
 });
+
+async function loadRateLimitStatus() {
+    try {
+        const data = await apiCall('/api/status');
+        const rateLimit = data.rateLimit;
+        
+        // Update the display
+        rateLimitUsage.textContent = `${rateLimit.used}/${rateLimit.total} (${rateLimit.percentageUsed}%)`;
+        rateLimitRemaining.textContent = `${rateLimit.remaining} requests`;
+        
+        // Update status badge
+        rateLimitHealth.textContent = rateLimit.status;
+        rateLimitHealth.className = `status-badge status-${rateLimit.status}`;
+        
+        // Update reset time
+        if (rateLimit.resetDateFormatted) {
+            rateLimitReset.textContent = rateLimit.resetDateFormatted;
+        } else {
+            rateLimitReset.textContent = 'Unknown';
+        }
+        
+        // Show warning if data is stale
+        if (rateLimit.isStale) {
+            rateLimitReset.textContent += ' (estimated)';
+        }
+        
+        console.log(`🔄 Rate limit status updated: ${rateLimit.remaining}/150 remaining (${rateLimit.status})`);
+        
+    } catch (error) {
+        console.error('Failed to load rate limit status:', error);
+        rateLimitUsage.textContent = 'Error loading';
+        rateLimitRemaining.textContent = 'Error loading';
+        rateLimitHealth.textContent = 'Error';
+        rateLimitHealth.className = 'status-badge status-error';
+        rateLimitReset.textContent = 'Error loading';
+    }
+}

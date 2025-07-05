@@ -358,7 +358,56 @@ class AuthService {
       // Map common errors to appropriate HTTP status codes and user-friendly messages
       if (error.message.includes('Rate limit')) {
         statusCode = 429;
-        publicErrorMessage = 'Rate limit exceeded, please try again later';
+        
+        // Try to extract detailed rate limit info from the error message (multiple patterns)
+        let detailedRateLimitMatch = error.message.match(/Used (\d+)\/(\d+) requests\. (\d+) remaining\. Resets in (\d+) seconds/);
+        
+        if (detailedRateLimitMatch) {
+          const [, used, total, remaining, resetTime] = detailedRateLimitMatch;
+          const resetDate = new Date(Date.now() + parseInt(resetTime) * 1000);
+          publicErrorMessage = `Rate limit exceeded: ${used}/${total} requests used, ${remaining} remaining. Resets in ${resetTime} seconds (${resetDate.toLocaleString()})`;
+          
+          console.error(`🚫 Enhanced rate limit error logged [${errorId}]:`, {
+            used: parseInt(used),
+            total: parseInt(total),
+            remaining: parseInt(remaining),
+            resetTime: parseInt(resetTime),
+            resetDate: resetDate.toISOString()
+          });
+        } else {
+          // Try alternative patterns
+          const simpleLimitMatch = error.message.match(/Rate limit too low: (\d+) requests remaining.*?resets in (\d+) seconds at (.+)/);
+          const rangeLimitMatch = error.message.match(/Rate limit too low: (\d+) requests remaining, need approximately (\d+).*?resets in (\d+) seconds at (.+)/);
+          
+          if (rangeLimitMatch) {
+            const [, remaining, needed, resetTime, resetDateStr] = rangeLimitMatch;
+            const resetDate = new Date(resetDateStr);
+            publicErrorMessage = `Rate limit too low: ${remaining} requests remaining, need ${needed}. Resets in ${resetTime} seconds (${resetDate.toLocaleString()})`;
+            
+            console.error(`🚫 Enhanced rate limit error logged [${errorId}]:`, {
+              used: 150 - parseInt(remaining),
+              total: 150,
+              remaining: parseInt(remaining),
+              needed: parseInt(needed),
+              resetTime: parseInt(resetTime),
+              resetDate: resetDate.toISOString()
+            });
+          } else if (simpleLimitMatch) {
+            const [, remaining, resetTime, resetDateStr] = simpleLimitMatch;
+            const resetDate = new Date(resetDateStr);
+            publicErrorMessage = `Rate limit too low: ${remaining} requests remaining (need at least 10). Resets in ${resetTime} seconds (${resetDate.toLocaleString()})`;
+            
+            console.error(`🚫 Enhanced rate limit error logged [${errorId}]:`, {
+              used: 150 - parseInt(remaining),
+              total: 150,
+              remaining: parseInt(remaining),
+              resetTime: parseInt(resetTime),
+              resetDate: resetDate.toISOString()
+            });
+          } else {
+            publicErrorMessage = 'Rate limit exceeded, please try again later';
+          }
+        }
       } else if (error.message.includes('No tokens') || error.message.includes('Invalid token') || 
                 error.message.includes('expired token') || error.message.includes('Authentication required')) {
         statusCode = 401;
