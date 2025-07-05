@@ -12,8 +12,27 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
       return authService.verifyJWTMiddleware()(req, res, next);
     }
     
-    // Check for session authentication
+    // Check for session authentication with enhanced security
     if (req.session?.user?.authenticated) {
+      // Additional checks to ensure session is valid
+      const sessionUser = req.session.user;
+      
+      // Verify session has required user properties
+      if (!sessionUser.id || !sessionUser.email) {
+        return res.status(401).json({ error: 'Invalid session structure' });
+      }
+      
+      // Check session age to ensure it's not too old (optional additional check)
+      const sessionCreatedAt = req.session.createdAt || Date.now();
+      const sessionAge = Date.now() - sessionCreatedAt;
+      const maxSessionAge = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+      
+      if (sessionAge > maxSessionAge) {
+        req.session.destroy();
+        return res.status(401).json({ error: 'Session expired, please login again' });
+      }
+      
+      // Session is valid, proceed
       return next();
     }
     
@@ -107,22 +126,43 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
         headers: error.response?.headers
       });
       
-      // Return detailed error information
+      // Return sanitized error information based on environment
+      const isDevelopment = process.env.NODE_ENV === 'development';
+      
+      // Create a safe error response that doesn't expose sensitive information
       const errorResponse = {
-        error: error.message,
+        error: 'Error processing request',
         timestamp: new Date().toISOString()
       };
       
-      // Include additional error details if available
-      if (error.response) {
-        errorResponse.httpStatus = error.response.status;
-        errorResponse.responseData = error.response.data;
+      // Add more information only in development mode
+      if (isDevelopment) {
+        errorResponse.message = error.message;
+        
+        // Only include basic status information from response, not full data
+        if (error.response) {
+          errorResponse.httpStatus = error.response.status;
+          
+          // Include safe error types but not detailed data
+          if (error.response.data?.errors) {
+            errorResponse.errorTypes = Array.isArray(error.response.data.errors) ? 
+              error.response.data.errors.map(e => e.type || e.code) : 
+              [error.response.data.errors.type || error.response.data.errors.code];
+          }
+        }
       }
       
       // Determine appropriate HTTP status code
       const statusCode = error.response?.status === 429 ? 429 : 
                         error.response?.status === 401 ? 401 : 
                         error.message.includes('Rate limit') ? 429 : 500;
+      
+      // Add user-friendly message
+      if (statusCode === 429) {
+        errorResponse.error = 'Rate limit exceeded, please try again later';
+      } else if (statusCode === 401) {
+        errorResponse.error = 'Authentication required or credentials expired';
+      }
       
       res.status(statusCode).json(errorResponse);
     }

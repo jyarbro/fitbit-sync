@@ -8,19 +8,92 @@ class AuthService {
     if (!this.jwtSecret) {
       throw new Error('JWT_SECRET environment variable is required');
     }
+    // Default token expiration (can be overridden by environment variables)
+    this.tokenExpiration = process.env.JWT_EXPIRATION || '30d';
+    this.refreshTokenExpiration = process.env.JWT_REFRESH_EXPIRATION || '90d';
   }
 
   generatePersonalJWT() {
+    const tokenId = crypto.randomBytes(16).toString('hex');
     const payload = {
       userId: 'personal-fitbit-sync',
       purpose: 'ios-shortcuts-access',
-      iat: Math.floor(Date.now() / 1000)
+      iat: Math.floor(Date.now() / 1000),
+      jti: tokenId // JWT ID for potential revocation
     };
     
-    return jwt.sign(payload, this.jwtSecret, { 
-      expiresIn: '365d',
+    // Generate a refresh token as well
+    const refreshTokenId = crypto.randomBytes(16).toString('hex');
+    const refreshPayload = {
+      userId: 'personal-fitbit-sync',
+      purpose: 'refresh',
+      iat: Math.floor(Date.now() / 1000),
+      jti: refreshTokenId,
+      tokenId: tokenId // Link to the access token
+    };
+    
+    const accessToken = jwt.sign(payload, this.jwtSecret, { 
+      expiresIn: this.tokenExpiration,
       issuer: 'fitbit-sync-personal'
     });
+    
+    const refreshToken = jwt.sign(refreshPayload, this.jwtSecret, { 
+      expiresIn: this.refreshTokenExpiration,
+      issuer: 'fitbit-sync-personal'
+    });
+    
+    return {
+      accessToken,
+      refreshToken,
+      expiresIn: this.getExpirationSeconds(this.tokenExpiration)
+    };
+  }
+  
+  // Helper to convert duration string to seconds
+  getExpirationSeconds(duration) {
+    const unit = duration.slice(-1);
+    const value = parseInt(duration.slice(0, -1));
+    
+    switch(unit) {
+      case 'd': return value * 24 * 60 * 60;
+      case 'h': return value * 60 * 60;
+      case 'm': return value * 60;
+      case 's': return value;
+      default: return 30 * 24 * 60 * 60; // default to 30 days
+    }
+  }
+  
+  // Generate a new access token from a refresh token
+  refreshJWT(refreshToken) {
+    try {
+      const decoded = this.verifyJWT(refreshToken);
+      
+      // Verify this is actually a refresh token
+      if (decoded.purpose !== 'refresh') {
+        throw new Error('Invalid token type');
+      }
+      
+      // Generate a new access token
+      const tokenId = crypto.randomBytes(16).toString('hex');
+      const payload = {
+        userId: decoded.userId,
+        purpose: 'ios-shortcuts-access',
+        iat: Math.floor(Date.now() / 1000),
+        jti: tokenId
+      };
+      
+      const accessToken = jwt.sign(payload, this.jwtSecret, { 
+        expiresIn: this.tokenExpiration,
+        issuer: 'fitbit-sync-personal'
+      });
+      
+      return {
+        accessToken,
+        expiresIn: this.getExpirationSeconds(this.tokenExpiration)
+      };
+    } catch (error) {
+      throw new Error('Invalid or expired refresh token');
+    }
   }
 
   verifyJWT(token) {
@@ -70,7 +143,7 @@ class AuthService {
     };
   }
 
-  buildAuthorizationURL(scopes = []) {
+  buildAuthorizationURL(scopes = [], req = null) {
     const pkce = this.generatePKCE();
     const state = this.generateOAuthState();
     
@@ -84,10 +157,21 @@ class AuthService {
       redirect_uri: process.env.REDIRECT_URI
     });
 
-    this.tempStorage = { 
-      codeVerifier: pkce.codeVerifier, 
-      state: state 
-    };
+    // Store OAuth state in session if available, otherwise fall back to in-memory
+    if (req && req.session) {
+      req.session.oauthState = {
+        codeVerifier: pkce.codeVerifier,
+        state: state,
+        timestamp: Date.now()
+      };
+    } else {
+      // Fallback to in-memory storage with timestamp for cleanup
+      this.tempStorage = { 
+        codeVerifier: pkce.codeVerifier, 
+        state: state,
+        timestamp: Date.now()
+      };
+    }
 
     return {
       url: `https://www.fitbit.com/oauth2/authorize?${params.toString()}`,
@@ -96,9 +180,49 @@ class AuthService {
     };
   }
 
-  async exchangeCodeForTokens(code, codeVerifier, state) {
-    if (this.tempStorage?.state !== state) {
-      throw new Error('Invalid state parameter');
+  async exchangeCodeForTokens(code, codeVerifier, state, req = null) {
+    let storedState = null;
+    let storedCodeVerifier = null;
+    
+    // Try to get state from session first, then fallback to in-memory
+    if (req && req.session?.oauthState) {
+      const oauthData = req.session.oauthState;
+      storedState = oauthData.state;
+      storedCodeVerifier = oauthData.codeVerifier;
+      
+      // Check if the OAuth data is not too old (max 10 minutes)
+      const age = Date.now() - oauthData.timestamp;
+      if (age > 10 * 60 * 1000) {
+        delete req.session.oauthState;
+        throw new Error('OAuth state expired, please restart the authorization flow');
+      }
+      
+      // Clean up session data
+      delete req.session.oauthState;
+    } else if (this.tempStorage) {
+      storedState = this.tempStorage.state;
+      storedCodeVerifier = this.tempStorage.codeVerifier;
+      
+      // Check if the OAuth data is not too old (max 10 minutes)
+      const age = Date.now() - this.tempStorage.timestamp;
+      if (age > 10 * 60 * 1000) {
+        delete this.tempStorage;
+        throw new Error('OAuth state expired, please restart the authorization flow');
+      }
+      
+      delete this.tempStorage;
+    } else {
+      throw new Error('No OAuth state found, please restart the authorization flow');
+    }
+    
+    // Validate state parameter
+    if (storedState !== state) {
+      throw new Error('Invalid state parameter - possible CSRF attack');
+    }
+    
+    // Validate code verifier matches
+    if (storedCodeVerifier !== codeVerifier) {
+      throw new Error('Invalid code verifier');
     }
     
     try {
@@ -209,36 +333,99 @@ class AuthService {
 
   errorHandler() {
     return (error, req, res, next) => {
+      // Log the error for server-side debugging
       console.error('API Error:', error);
       
+      if (error.stack) {
+        console.error('Stack trace:', error.stack);
+      }
+      
+      if (error.response) {
+        console.error('Response error data:', {
+          status: error.response.status,
+          headers: error.response.headers,
+          data: error.response.data
+        });
+      }
+      
       const isDevelopment = process.env.NODE_ENV === 'development';
+      const errorId = crypto.randomBytes(8).toString('hex'); // For tracking errors
       
-      if (error.message.includes('Rate limit exceeded')) {
-        return res.status(429).json({ 
-          error: 'Rate limit exceeded',
-          message: isDevelopment ? error.message : 'Please try again later'
-        });
+      // Determine error type and appropriate status code
+      let statusCode = 500;
+      let publicErrorMessage = 'Internal server error';
+      
+      // Map common errors to appropriate HTTP status codes and user-friendly messages
+      if (error.message.includes('Rate limit')) {
+        statusCode = 429;
+        publicErrorMessage = 'Rate limit exceeded, please try again later';
+      } else if (error.message.includes('No tokens') || error.message.includes('Invalid token') || 
+                error.message.includes('expired token') || error.message.includes('Authentication required')) {
+        statusCode = 401;
+        publicErrorMessage = 'Authentication required or credentials expired';
+      } else if (error.message.includes('Not found') || error.message.includes('does not exist')) {
+        statusCode = 404;
+        publicErrorMessage = 'Requested resource not found';
+      } else if (error.message.includes('Permission') || error.message.includes('Forbidden')) {
+        statusCode = 403;
+        publicErrorMessage = 'You do not have permission to access this resource';
+      } else if (error.message.includes('Invalid') || error.message.includes('Missing required') || 
+                error.message.includes('validation')) {
+        statusCode = 400;
+        publicErrorMessage = 'Invalid request parameters';
       }
       
-      if (error.message.includes('No tokens found')) {
-        return res.status(401).json({ 
-          error: 'Authentication required',
-          message: 'Please complete OAuth flow first'
-        });
+      // Use status code from the response if available
+      if (error.response?.status) {
+        statusCode = error.response.status;
       }
       
-      res.status(500).json({ 
-        error: 'Internal server error',
-        message: isDevelopment ? error.message : 'Something went wrong'
-      });
+      // Create a sanitized error response
+      const errorResponse = {
+        error: publicErrorMessage,
+        errorId: errorId,
+        timestamp: new Date().toISOString()
+      };
+      
+      // Only add detailed error information in development
+      if (isDevelopment) {
+        errorResponse.devMessage = error.message;
+        
+        if (error.response?.data) {
+          // Still sanitize the response data to avoid leaking sensitive info
+          const safeResponseData = { ...error.response.data };
+          
+          // Remove potential sensitive fields
+          delete safeResponseData.stack;
+          delete safeResponseData.trace;
+          delete safeResponseData.password;
+          delete safeResponseData.token;
+          delete safeResponseData.secret;
+          
+          errorResponse.responseData = safeResponseData;
+        }
+      }
+      
+      res.status(statusCode).json(errorResponse);
     };
   }
 
   corsMiddleware() {
     return (req, res, next) => {
-      res.header('Access-Control-Allow-Origin', '*');
-      res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-      res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+      // Get allowed origins from environment variable or use localhost as default for development
+      const allowedOrigins = process.env.ALLOWED_ORIGINS ? 
+        process.env.ALLOWED_ORIGINS.split(',') : 
+        ['https://localhost:8080'];
+        
+      const origin = req.headers.origin;
+      
+      // Only set CORS headers if the origin is in our allowed list
+      if (origin && allowedOrigins.includes(origin)) {
+        res.header('Access-Control-Allow-Origin', origin);
+        res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+        res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+        res.header('Access-Control-Allow-Credentials', 'true'); // Allow credentials
+      }
       
       if (req.method === 'OPTIONS') {
         res.sendStatus(200);

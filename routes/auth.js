@@ -8,7 +8,7 @@ export default function createAuthRoutes({ fitbitService, authService, db }) {
   router.get('/refreshtokens', (req, res) => {
     try {
       const scopes = fitbitService.scopes;
-      const authData = authService.buildAuthorizationURL(scopes);
+      const authData = authService.buildAuthorizationURL(scopes, req);
       res.redirect(authData.url);
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -22,13 +22,19 @@ export default function createAuthRoutes({ fitbitService, authService, db }) {
         return res.redirect('/callback.html?error=' + encodeURIComponent('Missing code or state in query parameters.'));
       }
 
-      // Retrieve codeVerifier from temp storage (in-memory for now)
-      const codeVerifier = authService.tempStorage?.codeVerifier;
+      // Get codeVerifier from session or temp storage
+      let codeVerifier = null;
+      if (req.session?.oauthState) {
+        codeVerifier = req.session.oauthState.codeVerifier;
+      } else if (authService.tempStorage) {
+        codeVerifier = authService.tempStorage.codeVerifier;
+      }
+      
       if (!codeVerifier) {
         return res.redirect('/callback.html?error=' + encodeURIComponent('Missing codeVerifier. Please restart the OAuth flow.'));
       }
 
-      const tokens = await authService.exchangeCodeForTokens(code, codeVerifier, state);
+      const tokens = await authService.exchangeCodeForTokens(code, codeVerifier, state, req);
       await db.storeTokens(tokens.access_token, tokens.refresh_token, tokens.expires_in);
 
       // Redirect to callback page with success parameters
@@ -52,12 +58,40 @@ export default function createAuthRoutes({ fitbitService, authService, db }) {
   });
 
   router.get('/newtoken', (req, res) => {
-    const newToken = authService.generatePersonalJWT();
+    // Check for authentication before generating tokens
+    if (!req.session?.user?.authenticated) {
+      return res.status(401).json({ error: 'Authentication required to generate tokens' });
+    }
+    
+    const tokens = authService.generatePersonalJWT();
     res.json({
-      personalJWT: newToken,
-      expiresIn: '365 days',
-      message: 'New personal JWT generated',
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresIn: tokens.expiresIn,
+      expiresInSeconds: tokens.expiresIn,
+      message: 'New personal JWT tokens generated',
     });
+  });
+  
+  router.post('/refresh-token', (req, res) => {
+    try {
+      const { refreshToken } = req.body;
+      
+      if (!refreshToken) {
+        return res.status(400).json({ error: 'Refresh token is required' });
+      }
+      
+      const newTokens = authService.refreshJWT(refreshToken);
+      res.json({
+        accessToken: newTokens.accessToken,
+        expiresIn: newTokens.expiresIn,
+        expiresInSeconds: newTokens.expiresIn,
+        message: 'Access token refreshed successfully',
+      });
+    } catch (error) {
+      console.error('Token refresh error:', error);
+      res.status(401).json({ error: error.message || 'Invalid refresh token' });
+    }
   });
 
   const ENTRA_CLIENT_ID = process.env.ENTRA_CLIENT_ID;
@@ -117,6 +151,11 @@ export default function createAuthRoutes({ fitbitService, authService, db }) {
         name: decoded.name,
         authenticated: true
       };
+      
+      // Ensure session creation timestamp is set
+      if (!req.session.createdAt) {
+        req.session.createdAt = Date.now();
+      }
 
       // Redirect to callback page with success parameters for Microsoft login
       const params = new URLSearchParams({

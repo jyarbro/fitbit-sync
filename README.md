@@ -25,6 +25,44 @@ Based on your `.scopes` file:
 - ✅ Respiratory Rate
 - ✅ Temperature (skin temperature)
 
+## Security Features
+
+### Environment Variables
+- `JWT_SECRET`: **REQUIRED** - 32+ character secret for JWT signing (no fallback provided)
+- `JWT_EXPIRATION`: Access token expiration (default: 30 days, supports format: 30d, 24h, 60m, etc.)
+- `JWT_REFRESH_EXPIRATION`: Refresh token expiration (default: 90 days)
+- `ALLOWED_ORIGINS`: Comma-separated list of allowed origins for CORS
+  - Default: Only allows `https://localhost:8080` if not specified
+
+### Security Headers
+The application automatically sets comprehensive security headers:
+- **Content Security Policy (CSP)**: Configurable via environment variables to prevent XSS
+- **X-Content-Type-Options**: Prevents MIME type sniffing
+- **X-Frame-Options**: Prevents clickjacking attacks
+- **X-XSS-Protection**: Browser XSS protection
+- **Strict-Transport-Security (HSTS)**: Forces HTTPS connections
+- **Referrer-Policy**: Controls referrer information leakage
+- **Permissions-Policy**: Restricts browser feature access
+
+### Session Security
+- Secure session cookies with `__Host-` prefix
+- `SameSite=Strict` to prevent CSRF attacks
+- `HttpOnly` cookies to prevent XSS access
+- Automatic session expiration tracking
+- Enhanced session validation
+
+### Authentication & Authorization
+- **JWT Token Management**: Short-lived access tokens (30 days default) with refresh capability
+- **OAuth State Protection**: Secure state management with session storage and expiration
+- **Authentication Verification**: Multi-layered authentication checks
+- **Error Sanitization**: Secure error responses that don't leak sensitive information
+
+### CORS Security
+The application implements strict CORS policies:
+- Only specified origins in the `ALLOWED_ORIGINS` environment variable are allowed
+- Credentials can only be included from authorized origins
+- OPTIONS requests are handled properly for preflight checks
+
 ## Setup
 
 ### 1. Environment Configuration
@@ -36,10 +74,11 @@ cp .env.example .env
 ```
 
 Required variables:
-- `JWT_SECRET`: 32+ character secret for JWT signing
+- `JWT_SECRET`: 32+ character secret for JWT signing (REQUIRED, no fallback)
 - `CLIENT_ID`: Your Fitbit app client ID
 - `CLIENT_SECRET`: Your Fitbit app client secret
 - `REDIRECT_URI`: Your callback URL (e.g., `https://yourdomain.com/auth/callback` or `https://localhost:8080/auth/callback` for local dev)
+- `ALLOWED_ORIGINS`: Comma-separated list of allowed origins for CORS
 
 ### 2. Install Dependencies
 
