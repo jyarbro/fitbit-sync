@@ -28,6 +28,7 @@
             <button id="generate-jwt-btn" class="btn btn-primary">Generate New JWT</button>
             <button id="refresh-fitbit-btn" class="btn btn-primary">Refresh Fitbit Tokens</button>
             <button id="date-sync-btn" class="btn btn-primary">Manual Sync</button>
+            <button id="delete-samples-btn" class="btn btn-danger">Delete Samples</button>
         </section>
 
         <!-- Date Sync Modal -->
@@ -86,6 +87,47 @@
             </div>
         </div>
 
+        <!-- Delete Samples Modal -->
+        <div id="delete-samples-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Delete Samples by Date</h2>
+                    <button id="close-delete-modal" class="close-btn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="warning-notice">
+                        <strong>⚠️ Warning:</strong> This will permanently delete samples from the database. This action cannot be undone.
+                    </div>
+                    
+                    <div class="date-deletion-form">
+                        <div class="form-group">
+                            <label for="delete-date">Date:</label>
+                            <input type="date" id="delete-date" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label for="delete-types">Sample Types (optional):</label>
+                            <select id="delete-types" class="form-control" multiple>
+                                <option value="">All Types</option>
+                            </select>
+                            <small class="help-text">Hold Ctrl/Cmd to select multiple types. Leave blank to delete all types.</small>
+                        </div>
+                        <div class="form-actions">
+                            <button id="preview-deletion-btn" class="btn btn-secondary">Preview Deletion</button>
+                        </div>
+                    </div>
+                    
+                    <div id="deletion-preview" class="deletion-preview hidden">
+                        <h4>Deletion Preview</h4>
+                        <div id="preview-content"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button id="cancel-delete" class="btn btn-secondary">Cancel</button>
+                    <button id="delete-by-date-btn" class="btn btn-danger">Delete Samples</button>
+                </div>
+            </div>
+        </div>
+
         <!-- JWT Display -->
         <div id="jwt-display" class="jwt-display hidden">
             <h3>Personal JWT Token</h3>
@@ -114,10 +156,6 @@
 
             <!-- Selection Controls -->
             <div class="selection-controls hidden" id="selection-controls">
-                <label class="select-all-container">
-                    <input type="checkbox" id="select-all-checkbox">
-                    <span>Select All</span>
-                </label>
                 <button id="delete-selected-btn" class="btn btn-danger hidden">Delete Selected</button>
             </div>
 

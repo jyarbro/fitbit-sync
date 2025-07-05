@@ -382,5 +382,101 @@ export default function createApiRoutes({ db, fitbitService, authService }) {
     }
   });
 
+  // Delete samples by date
+  router.delete('/samples/date/:date', async (req, res) => {
+    try {
+      const { date } = req.params;
+      const { types } = req.body; // Optional array of sample types to delete
+      
+      if (!date) {
+        return res.status(400).json({ error: 'Date parameter is required' });
+      }
+
+      // Validate date format
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(date)) {
+        return res.status(400).json({ error: 'Date must be in YYYY-MM-DD format' });
+      }
+
+      // Validate types if provided
+      if (types && (!Array.isArray(types) || types.length === 0)) {
+        return res.status(400).json({ error: 'Types must be a non-empty array when provided' });
+      }
+
+      // Get sample count first for logging
+      const countInfo = await db.getSampleCountByDate(date, types);
+      
+      console.log(`Deleting samples for date ${date}:`, countInfo);
+
+      if (countInfo.totalCount === 0) {
+        return res.json({
+          message: types 
+            ? `No samples found for date ${date} with specified types: ${types.join(', ')}`
+            : `No samples found for date ${date}`,
+          deletedCount: 0,
+          date,
+          types: types || 'all',
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      const result = await db.deleteSamplesByDate(date, types);
+      
+      res.json({
+        message: types 
+          ? `Successfully deleted ${result.deletedCount} samples for date ${date} (types: ${types.join(', ')})`
+          : `Successfully deleted ${result.deletedCount} samples for date ${date} (all types)`,
+        deletedCount: result.deletedCount,
+        date,
+        types: types || 'all',
+        beforeDeletion: countInfo,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Delete samples by date error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get sample count by date (for preview before deletion)
+  router.get('/samples/date/:date/count', async (req, res) => {
+    try {
+      const { date } = req.params;
+      const { types } = req.query; // Optional comma-separated list of sample types
+      
+      if (!date) {
+        return res.status(400).json({ error: 'Date parameter is required' });
+      }
+
+      // Validate date format
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(date)) {
+        return res.status(400).json({ error: 'Date must be in YYYY-MM-DD format' });
+      }
+
+      // Parse types from query string
+      let typesArray = null;
+      if (types) {
+        typesArray = types.split(',').map(t => t.trim()).filter(t => t);
+        if (typesArray.length === 0) {
+          typesArray = null;
+        }
+      }
+
+      const countInfo = await db.getSampleCountByDate(date, typesArray);
+      
+      res.json({
+        date,
+        types: typesArray || 'all',
+        totalCount: countInfo.totalCount,
+        byType: countInfo.byType,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error('Get sample count by date error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return router;
 }

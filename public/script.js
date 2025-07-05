@@ -35,7 +35,6 @@ const prevPageBtn = document.getElementById('prev-page');
 const nextPageBtn = document.getElementById('next-page');
 const pageInfo = document.getElementById('page-info');
 const selectionControls = document.getElementById('selection-controls');
-const selectAllCheckbox = document.getElementById('select-all-checkbox');
 const headerSelectAll = document.getElementById('header-select-all');
 const deleteSelectedBtn = document.getElementById('delete-selected-btn');
 
@@ -46,6 +45,16 @@ const rateLimitUsage = document.getElementById('rate-limit-usage');
 const rateLimitRemaining = document.getElementById('rate-limit-remaining');
 const rateLimitHealth = document.getElementById('rate-limit-health');
 const rateLimitReset = document.getElementById('rate-limit-reset');
+
+// Date-based deletion elements
+const deleteSamplesBtn = document.getElementById('delete-samples-btn');
+const deleteSamplesModal = document.getElementById('delete-samples-modal');
+const closeDeleteModal = document.getElementById('close-delete-modal');
+const cancelDelete = document.getElementById('cancel-delete');
+const deleteDateInput = document.getElementById('delete-date');
+const deleteTypesSelect = document.getElementById('delete-types');
+const deletionPreview = document.getElementById('deletion-preview');
+const previewContent = document.getElementById('preview-content');
 
 document.addEventListener('DOMContentLoaded', async () => {
     await checkAuthStatus();
@@ -70,9 +79,28 @@ function setupEventListeners() {
     nextPageBtn.addEventListener('click', () => changePage(currentPage + 1));
     
     // Selection event listeners
-    selectAllCheckbox.addEventListener('change', handleSelectAll);
     headerSelectAll.addEventListener('change', handleSelectAll);
     deleteSelectedBtn.addEventListener('click', deleteSelectedSamples);
+    
+    // Date-based deletion event listeners
+    const previewDeletionBtn = document.getElementById('preview-deletion-btn');
+    const deleteByDateBtn = document.getElementById('delete-by-date-btn');
+    
+    if (deleteSamplesBtn) {
+        deleteSamplesBtn.addEventListener('click', openDeleteSamplesModal);
+    }
+    if (closeDeleteModal) {
+        closeDeleteModal.addEventListener('click', closeDeleteSamplesModal);
+    }
+    if (cancelDelete) {
+        cancelDelete.addEventListener('click', closeDeleteSamplesModal);
+    }
+    if (previewDeletionBtn) {
+        previewDeletionBtn.addEventListener('click', previewDeletion);
+    }
+    if (deleteByDateBtn) {
+        deleteByDateBtn.addEventListener('click', deleteSamplesByDate);
+    }
     
     // Date sync modal event listeners
     document.querySelectorAll('input[name="sync-type"]').forEach(radio => {
@@ -85,6 +113,15 @@ function setupEventListeners() {
             closeDateSyncModal();
         }
     });
+    
+    // Close delete modal when clicking outside
+    if (deleteSamplesModal) {
+        deleteSamplesModal.addEventListener('click', (e) => {
+            if (e.target === deleteSamplesModal) {
+                closeDeleteSamplesModal();
+            }
+        });
+    }
     
     // Set default dates
     initializeDateInputs();
@@ -237,12 +274,26 @@ async function loadSampleTypes() {
         // Clear existing options except "All Types"
         typeFilter.innerHTML = '<option value="">All Types</option>';
         
-        // Add sample types
+        // Clear delete types select but keep the placeholder
+        if (deleteTypesSelect) {
+            deleteTypesSelect.innerHTML = '<option value="">All Types (select none to delete all)</option>';
+        }
+        
+        // Add sample types to both selects
         data.types.forEach(type => {
-            const option = document.createElement('option');
-            option.value = type;
-            option.textContent = type;
-            typeFilter.appendChild(option);
+            // Add to filter dropdown
+            const filterOption = document.createElement('option');
+            filterOption.value = type;
+            filterOption.textContent = type;
+            typeFilter.appendChild(filterOption);
+            
+            // Add to delete types multi-select
+            if (deleteTypesSelect) {
+                const deleteOption = document.createElement('option');
+                deleteOption.value = type;
+                deleteOption.textContent = type;
+                deleteTypesSelect.appendChild(deleteOption);
+            }
         });
     } catch (error) {
         console.error('Failed to load sample types:', error);
@@ -386,26 +437,46 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-function showSuccess(message) {
-    // Create a temporary success banner
-    const successBanner = document.createElement('div');
-    successBanner.className = 'error-banner';
-    successBanner.style.backgroundColor = '#d4edda';
-    successBanner.style.borderColor = '#c3e6cb';
-    successBanner.style.color = '#155724';
-    successBanner.innerHTML = `
-        <span>${message}</span>
-        <button class="close-btn" onclick="this.parentElement.remove()">&times;</button>
+function showNotification(message, type = 'success', duration = 3000) {
+    // Remove any existing notifications
+    const existingNotifications = document.querySelectorAll('.notification-overlay');
+    existingNotifications.forEach(notification => notification.remove());
+    
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `notification-overlay notification-${type}`;
+    notification.innerHTML = `
+        <div class="notification-content">
+            <span class="notification-message">${message}</span>
+            <button class="notification-close" onclick="this.parentElement.parentElement.remove()">&times;</button>
+        </div>
     `;
     
-    document.querySelector('.container').insertBefore(successBanner, document.querySelector('.header'));
+    // Add to page
+    document.body.appendChild(notification);
     
-    // Auto-remove after 5 seconds
-    setTimeout(() => {
-        if (successBanner.parentElement) {
-            successBanner.remove();
-        }
-    }, 5000);
+    // Trigger animation
+    requestAnimationFrame(() => {
+        notification.classList.add('notification-show');
+    });
+    
+    // Auto-remove for success notifications only
+    if (type === 'success' && duration > 0) {
+        setTimeout(() => {
+            if (notification.parentElement) {
+                notification.classList.remove('notification-show');
+                setTimeout(() => {
+                    if (notification.parentElement) {
+                        notification.remove();
+                    }
+                }, 300); // Wait for fade-out animation
+            }
+        }, duration);
+    }
+}
+
+function showSuccess(message) {
+    showNotification(message, 'success', 3000);
 }
 
 // Date Sync Modal Functions
@@ -442,6 +513,32 @@ function openDateSyncModal() {
 function closeDateSyncModal() {
     dateSyncModal.classList.add('hidden');
     document.body.style.overflow = ''; // Restore scrolling
+}
+
+// Delete Samples Modal Functions
+function openDeleteSamplesModal() {
+    deleteSamplesModal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden'; // Prevent background scrolling
+    
+    // Set default date to today
+    if (!deleteDateInput.value) {
+        const today = new Date();
+        deleteDateInput.value = formatDateForInput(today);
+        deleteDateInput.max = formatDateForInput(today);
+    }
+    
+    // Clear previous preview
+    deletionPreview.classList.add('hidden');
+}
+
+function closeDeleteSamplesModal() {
+    deleteSamplesModal.classList.add('hidden');
+    document.body.style.overflow = ''; // Restore scrolling
+    
+    // Clear form
+    deleteDateInput.value = '';
+    deleteTypesSelect.selectedIndex = -1;
+    deletionPreview.classList.add('hidden');
 }
 
 function toggleSyncType() {
@@ -560,10 +657,6 @@ function handleSampleSelection(event) {
 function handleSelectAll(event) {
     const isChecked = event.target.checked;
     
-    // Update both checkboxes to stay in sync
-    selectAllCheckbox.checked = isChecked;
-    headerSelectAll.checked = isChecked;
-    
     // Select/deselect all sample checkboxes
     document.querySelectorAll('.sample-checkbox').forEach(checkbox => {
         checkbox.checked = isChecked;
@@ -586,12 +679,10 @@ function updateSelectionState() {
     const totalSamples = document.querySelectorAll('.sample-checkbox').length;
     const selectedCount = selectedSamples.size;
     
-    // Update select all checkboxes
+    // Update select all checkbox
     const allSelected = selectedCount > 0 && selectedCount === totalSamples;
     const someSelected = selectedCount > 0 && selectedCount < totalSamples;
     
-    selectAllCheckbox.checked = allSelected;
-    selectAllCheckbox.indeterminate = someSelected;
     headerSelectAll.checked = allSelected;
     headerSelectAll.indeterminate = someSelected;
     
@@ -607,12 +698,6 @@ function updateSelectionState() {
 async function deleteSelectedSamples() {
     if (selectedSamples.size === 0) {
         showError('No samples selected for deletion');
-        return;
-    }
-    
-    // Show confirmation dialog
-    const confirmMessage = `Are you sure you want to delete ${selectedSamples.size} selected sample(s)? This action cannot be undone.`;
-    if (!confirm(confirmMessage)) {
         return;
     }
     
@@ -662,6 +747,121 @@ async function deleteSelectedSamples() {
     } finally {
         deleteSelectedBtn.disabled = false;
         updateSelectionState();
+    }
+}
+
+// Date-based deletion functions
+async function previewDeletion() {
+    try {
+        const date = deleteDateInput.value;
+        if (!date) {
+            showError('Please select a date for deletion preview.');
+            return;
+        }
+
+        // Get selected types
+        const selectedTypes = Array.from(deleteTypesSelect.selectedOptions)
+            .map(option => option.value)
+            .filter(value => value); // Remove empty values
+
+        const params = new URLSearchParams({ 
+            types: selectedTypes.join(',') 
+        });
+
+        const countData = await apiCall(`/api/samples/date/${date}/count?${params}`);
+        
+        // Show preview
+        deletionPreview.classList.remove('hidden');
+        
+        if (countData.totalCount === 0) {
+            previewContent.innerHTML = `
+                <div class="preview-summary">
+                    <div class="preview-total">No samples found for ${date}</div>
+                    <p>No samples will be deleted.</p>
+                </div>
+            `;
+            return;
+        }
+
+        const typesText = selectedTypes.length > 0 ? selectedTypes.join(', ') : 'all types';
+        
+        let byTypeHtml = '';
+        if (countData.byType.length > 0) {
+            byTypeHtml = `
+                <div class="preview-by-type">
+                    ${countData.byType.map(typeInfo => `
+                        <div class="type-count">
+                            <span class="type-name">${typeInfo.type}:</span>
+                            <span class="type-total">${typeInfo.count}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        previewContent.innerHTML = `
+            <div class="preview-summary">
+                <div class="preview-total">⚠️ ${countData.totalCount} samples will be deleted for ${date}</div>
+                <p><strong>Types to delete:</strong> ${typesText}</p>
+                ${byTypeHtml}
+            </div>
+            <p><strong>⚠️ Warning:</strong> This action cannot be undone. All selected samples for this date will be permanently deleted.</p>
+        `;
+
+    } catch (error) {
+        console.error('Failed to preview deletion:', error);
+        showError(`Failed to preview deletion: ${error.message}`);
+    }
+}
+
+async function deleteSamplesByDate() {
+    try {
+        const date = deleteDateInput.value;
+        if (!date) {
+            showError('Please select a date for deletion.');
+            return;
+        }
+
+        // Get selected types
+        const selectedTypes = Array.from(deleteTypesSelect.selectedOptions)
+            .map(option => option.value)
+            .filter(value => value); // Remove empty values
+
+        showLoading(true);
+        hideError();
+
+        const requestBody = {};
+        if (selectedTypes.length > 0) {
+            requestBody.types = selectedTypes;
+        }
+
+        const response = await fetch(`/api/samples/date/${date}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to delete samples');
+        }
+
+        showSuccess(data.message);
+        
+        // Close the modal and clear the form
+        closeDeleteSamplesModal();
+        
+        // Reload samples if we're viewing them
+        await loadSamples();
+
+    } catch (error) {
+        console.error('Failed to delete samples by date:', error);
+        showError(`Failed to delete samples: ${error.message}`);
+    } finally {
+        showLoading(false);
     }
 }
 

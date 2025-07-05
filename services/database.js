@@ -484,6 +484,117 @@ class Database {
     });
   }
 
+  // Delete all samples for a specific date
+  async deleteSamplesByDate(dateStr, sampleTypes = null) {
+    if (!dateStr) {
+      throw new Error('Date is required for deletion');
+    }
+
+    // Validate date format (YYYY-MM-DD)
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(dateStr)) {
+      throw new Error('Date must be in YYYY-MM-DD format');
+    }
+
+    // Create date boundaries for the given day
+    const startOfDay = `${dateStr}T00:00:00.000Z`;
+    const endOfDay = `${dateStr}T23:59:59.999Z`;
+
+    let whereConditions = [];
+    let params = [];
+
+    // Build date conditions - samples can have timestamp, start_time, or end_time
+    whereConditions.push(`(
+      (timestamp >= ? AND timestamp <= ?) OR 
+      (start_time >= ? AND start_time <= ?) OR
+      (end_time >= ? AND end_time <= ?) OR
+      (DATE(timestamp) = ?) OR
+      (DATE(start_time) = ?) OR
+      (DATE(end_time) = ?)
+    )`);
+    
+    // Add parameters for date conditions (9 total)
+    params.push(startOfDay, endOfDay, startOfDay, endOfDay, startOfDay, endOfDay, dateStr, dateStr, dateStr);
+
+    // Add type filtering if specified
+    if (sampleTypes && Array.isArray(sampleTypes) && sampleTypes.length > 0) {
+      const typePlaceholders = sampleTypes.map(() => '?').join(',');
+      whereConditions.push(`type IN (${typePlaceholders})`);
+      params.push(...sampleTypes);
+    }
+
+    const whereClause = whereConditions.join(' AND ');
+    const query = `DELETE FROM samples WHERE ${whereClause}`;
+
+    return new Promise((resolve, reject) => {
+      this.db.run(query, params, function(err) {
+        if (err) {
+          console.error('Error deleting samples by date:', err);
+          reject(err);
+        } else {
+          const message = sampleTypes 
+            ? `Deleted ${this.changes} samples for date ${dateStr} (types: ${sampleTypes.join(', ')})`
+            : `Deleted ${this.changes} samples for date ${dateStr} (all types)`;
+          console.log(message);
+          resolve({
+            deletedCount: this.changes,
+            date: dateStr,
+            types: sampleTypes || 'all'
+          });
+        }
+      });
+    });
+  }
+
+  // Get sample count by date for verification
+  async getSampleCountByDate(dateStr, sampleTypes = null) {
+    if (!dateStr) {
+      throw new Error('Date is required');
+    }
+
+    const startOfDay = `${dateStr}T00:00:00.000Z`;
+    const endOfDay = `${dateStr}T23:59:59.999Z`;
+
+    let whereConditions = [];
+    let params = [];
+
+    whereConditions.push(`(
+      (timestamp >= ? AND timestamp <= ?) OR 
+      (start_time >= ? AND start_time <= ?) OR
+      (end_time >= ? AND end_time <= ?) OR
+      (DATE(timestamp) = ?) OR
+      (DATE(start_time) = ?) OR
+      (DATE(end_time) = ?)
+    )`);
+    
+    params.push(startOfDay, endOfDay, startOfDay, endOfDay, startOfDay, endOfDay, dateStr, dateStr, dateStr);
+
+    if (sampleTypes && Array.isArray(sampleTypes) && sampleTypes.length > 0) {
+      const typePlaceholders = sampleTypes.map(() => '?').join(',');
+      whereConditions.push(`type IN (${typePlaceholders})`);
+      params.push(...sampleTypes);
+    }
+
+    const whereClause = whereConditions.join(' AND ');
+    const query = `SELECT COUNT(*) as count, type FROM samples WHERE ${whereClause} GROUP BY type`;
+
+    return new Promise((resolve, reject) => {
+      this.db.all(query, params, (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          const totalCount = rows.reduce((sum, row) => sum + row.count, 0);
+          resolve({
+            totalCount,
+            byType: rows,
+            date: dateStr,
+            types: sampleTypes || 'all'
+          });
+        }
+      });
+    });
+  }
+
   async cleanupOldSamples(daysToKeep = 30) {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
