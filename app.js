@@ -1,5 +1,6 @@
 import express, { json, urlencoded } from 'express';
 import dotenv from 'dotenv';
+import session from 'express-session';
 import Database from './services/database.js';
 import FitbitService from './services/fitbit-service.js';
 import AuthService from './services/auth.js';
@@ -38,6 +39,17 @@ async function initializeServices() {
 app.use(json());
 app.use(urlencoded({ extended: true }));
 app.set('trust proxy', 1);
+
+app.use(session({
+  secret: process.env.JWT_SECRET || 'fallback-secret-key',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
 
 app.use('/health', createHealthRoutes());
 app.use('/', createRootRoutes());

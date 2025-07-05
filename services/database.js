@@ -142,9 +142,9 @@ class Database {
           stmt.run([
             sample.type,
             sample.value,
-            sample.timestamp || null,
-            sample.startTime || null,
-            sample.endTime || null
+            sample.timestamp || sample.datetime || null,
+            sample.startTime || sample.start_time || null,
+            sample.endTime || sample.end_time || null
           ], function(err) {
             if (err) {
               console.error('Error inserting sample:', err);
@@ -248,6 +248,99 @@ class Database {
             reject(err);
           } else {
             resolve(row || { rate_limit_remaining: 150, rate_limit_reset: 0 });
+          }
+        }
+      );
+    });
+  }
+
+  async getSamplesPaginated(page = 1, limit = 100, typeFilter = null, sortColumn = 'created_at', sortDirection = 'desc') {
+    const offset = (page - 1) * limit;
+    const validSortColumns = ['type', 'value', 'timestamp', 'start_time', 'end_time', 'created_at'];
+    const validDirections = ['asc', 'desc'];
+    
+    // Validate sort parameters
+    if (!validSortColumns.includes(sortColumn)) {
+      sortColumn = 'created_at';
+    }
+    if (!validDirections.includes(sortDirection.toLowerCase())) {
+      sortDirection = 'desc';
+    }
+
+    let whereClause = '';
+    let params = [];
+    
+    if (typeFilter) {
+      whereClause = 'WHERE type = ?';
+      params.push(typeFilter);
+    }
+
+    // Get total count
+    const countQuery = `SELECT COUNT(*) as total FROM samples ${whereClause}`;
+    const totalCount = await new Promise((resolve, reject) => {
+      this.db.get(countQuery, params, (err, row) => {
+        if (err) reject(err);
+        else resolve(row.total);
+      });
+    });
+
+    // Get samples with pagination
+    const dataQuery = `
+      SELECT type, value, timestamp, start_time as startTime, end_time as endTime, created_at
+      FROM samples 
+      ${whereClause}
+      ORDER BY ${sortColumn} ${sortDirection.toUpperCase()}
+      LIMIT ? OFFSET ?
+    `;
+    
+    const dataParams = [...params, limit, offset];
+    
+    const samples = await new Promise((resolve, reject) => {
+      this.db.all(dataQuery, dataParams, (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          // Clean up null values for frontend
+          const cleanedRows = rows.map(row => {
+            const cleaned = { 
+              type: row.type, 
+              value: row.value,
+              created_at: row.created_at
+            };
+            if (row.timestamp) cleaned.timestamp = row.timestamp;
+            if (row.startTime) cleaned.startTime = row.startTime;
+            if (row.endTime) cleaned.endTime = row.endTime;
+            return cleaned;
+          });
+          resolve(cleanedRows);
+        }
+      });
+    });
+
+    const totalPages = Math.ceil(totalCount / limit);
+
+    return {
+      samples,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalCount,
+        limit,
+        hasNext: page < totalPages,
+        hasPrev: page > 1
+      }
+    };
+  }
+
+  async getSampleTypes() {
+    return new Promise((resolve, reject) => {
+      this.db.all(
+        'SELECT DISTINCT type FROM samples ORDER BY type',
+        (err, rows) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(rows.map(row => row.type));
           }
         }
       );

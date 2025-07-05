@@ -10,7 +10,6 @@ class AuthService {
     }
   }
 
-  // Generate a long-lived JWT for personal use
   generatePersonalJWT() {
     const payload = {
       userId: 'personal-fitbit-sync',
@@ -18,14 +17,12 @@ class AuthService {
       iat: Math.floor(Date.now() / 1000)
     };
     
-    // Long expiration (1 year) since it's just for personal use
     return jwt.sign(payload, this.jwtSecret, { 
       expiresIn: '365d',
       issuer: 'fitbit-sync-personal'
     });
   }
 
-  // Verify JWT token
   verifyJWT(token) {
     try {
       return jwt.verify(token, this.jwtSecret);
@@ -34,7 +31,6 @@ class AuthService {
     }
   }
 
-  // Middleware to verify JWT
   verifyJWTMiddleware() {
     return (req, res, next) => {
       const authHeader = req.headers.authorization;
@@ -55,12 +51,12 @@ class AuthService {
     };
   }
 
-  // Generate OAuth state parameter for CSRF protection
+  // For CSRF protection
   generateOAuthState() {
     return crypto.randomBytes(32).toString('hex');
   }
 
-  // Generate PKCE code verifier and challenge
+  // PKCE code verifier and challenge
   generatePKCE() {
     const codeVerifier = crypto.randomBytes(32).toString('base64url');
     const codeChallenge = crypto
@@ -74,7 +70,6 @@ class AuthService {
     };
   }
 
-  // Build Fitbit authorization URL
   buildAuthorizationURL(scopes = []) {
     const pkce = this.generatePKCE();
     const state = this.generateOAuthState();
@@ -89,7 +84,6 @@ class AuthService {
       redirect_uri: process.env.REDIRECT_URI
     });
 
-    // Store PKCE and state for later verification (in production, use Redis or database)
     this.tempStorage = { 
       codeVerifier: pkce.codeVerifier, 
       state: state 
@@ -102,9 +96,7 @@ class AuthService {
     };
   }
 
-  // Exchange authorization code for tokens
   async exchangeCodeForTokens(code, codeVerifier, state) {
-    // Verify state parameter (CSRF protection)
     if (this.tempStorage?.state !== state) {
       throw new Error('Invalid state parameter');
     }
@@ -115,7 +107,8 @@ class AuthService {
           client_id: process.env.CLIENT_ID,
           code: code,
           code_verifier: codeVerifier,
-          grant_type: 'authorization_code'
+          grant_type: 'authorization_code',
+          redirect_uri: process.env.REDIRECT_URI
         }), {
           headers: {
             'Authorization': `Basic ${Buffer.from(`${process.env.CLIENT_ID}:${process.env.CLIENT_SECRET}`).toString('base64')}`,
@@ -124,7 +117,6 @@ class AuthService {
         }
       );
 
-      // Clean up temporary storage
       delete this.tempStorage;
 
       return {
@@ -140,10 +132,8 @@ class AuthService {
     }
   }
 
-  // Security middleware to block sensitive files
   blockSensitiveFiles() {
     return (req, res, next) => {
-      // Block database files and other sensitive files
       if (req.path.match(/\.(db|sqlite|sqlite3|env|log)$/i)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
@@ -151,7 +141,6 @@ class AuthService {
     };
   }
 
-  // Rate limiting middleware (simple in-memory implementation)
   createRateLimiter(windowMs = 15 * 60 * 1000, max = 100) {
     const requests = new Map();
     
@@ -170,7 +159,6 @@ class AuthService {
         }
       }
       
-      // Check current IP
       const clientRequests = requests.get(clientIP) || [];
       const recentRequests = clientRequests.filter(time => time > windowStart);
       
@@ -181,7 +169,6 @@ class AuthService {
         });
       }
       
-      // Add current request
       recentRequests.push(now);
       requests.set(clientIP, recentRequests);
       
@@ -220,12 +207,10 @@ class AuthService {
     };
   }
 
-  // Error handling middleware
   errorHandler() {
     return (error, req, res, next) => {
       console.error('API Error:', error);
       
-      // Don't expose internal errors in production
       const isDevelopment = process.env.NODE_ENV === 'development';
       
       if (error.message.includes('Rate limit exceeded')) {
@@ -242,7 +227,6 @@ class AuthService {
         });
       }
       
-      // Generic error response
       res.status(500).json({ 
         error: 'Internal server error',
         message: isDevelopment ? error.message : 'Something went wrong'
@@ -250,7 +234,6 @@ class AuthService {
     };
   }
 
-  // CORS middleware for development
   corsMiddleware() {
     return (req, res, next) => {
       res.header('Access-Control-Allow-Origin', '*');

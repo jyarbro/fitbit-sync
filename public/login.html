@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fitbit Sync - Login Required</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .login-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            text-align: center;
+            padding: 2rem;
+        }
+        
+        .login-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 3rem;
+            max-width: 400px;
+            width: 100%;
+        }
+        
+        .login-card h1 {
+            color: #333;
+            margin-bottom: 1rem;
+        }
+        
+        .login-card p {
+            color: #666;
+            margin-bottom: 2rem;
+            line-height: 1.5;
+        }
+        
+        .login-btn {
+            background: #0078d4;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: background-color 0.2s;
+        }
+        
+        .login-btn:hover {
+            background: #106ebe;
+        }
+        
+        .redirect-message {
+            margin-top: 2rem;
+            color: #666;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-card">
+            <h1>Authentication Required</h1>
+            <p>You need to be logged in to access the Fitbit Sync Dashboard.</p>
+            <a href="/auth/login" class="login-btn">Login with Microsoft</a>
+            <div class="redirect-message">
+                <p>Redirecting automatically...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Automatic redirect to Microsoft login
+        setTimeout(() => {
+            window.location.href = '/auth/login';
+        }, 2000);
+    </script>
+</body>
+</html>

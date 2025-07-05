@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fitbit Sync - OAuth Complete</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .callback-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            text-align: center;
+            padding: 2rem;
+        }
+        
+        .callback-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 3rem;
+            max-width: 500px;
+            width: 100%;
+        }
+        
+        .callback-card h1 {
+            color: #28a745;
+            margin-bottom: 1rem;
+            font-size: 2rem;
+        }
+        
+        .callback-card h2 {
+            color: #333;
+            margin-bottom: 1rem;
+            font-size: 1.5rem;
+        }
+        
+        .callback-card p {
+            color: #666;
+            margin-bottom: 1rem;
+            line-height: 1.5;
+        }
+        
+        .success-icon {
+            font-size: 4rem;
+            color: #28a745;
+            margin-bottom: 1rem;
+        }
+        
+        .info-section {
+            background: #f8f9fa;
+            border-radius: 4px;
+            padding: 1rem;
+            margin: 1.5rem 0;
+            text-align: left;
+        }
+        
+        .info-section h3 {
+            color: #333;
+            margin-bottom: 0.5rem;
+            font-size: 1.1rem;
+        }
+        
+        .info-item {
+            margin-bottom: 0.5rem;
+            font-family: monospace;
+            font-size: 0.9rem;
+            color: #555;
+        }
+        
+        .return-btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: background-color 0.2s;
+            margin-top: 1rem;
+        }
+        
+        .return-btn:hover {
+            background: #0056b3;
+        }
+        
+        .error-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 3rem;
+            max-width: 500px;
+            width: 100%;
+            border-left: 4px solid #dc3545;
+        }
+        
+        .error-card h1 {
+            color: #dc3545;
+            margin-bottom: 1rem;
+        }
+        
+        .error-icon {
+            font-size: 4rem;
+            color: #dc3545;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="callback-container">
+        <div id="success-content" class="callback-card" style="display: none;">
+            <div class="success-icon">✓</div>
+            <h1>Authentication Successful!</h1>
+            <p>Your Fitbit OAuth flow has been completed successfully.</p>
+            
+            <div class="info-section">
+                <h3>Connection Details:</h3>
+                <div id="user-info"></div>
+            </div>
+            
+            <p>Your Fitbit access and refresh tokens have been securely stored for your account.</p>
+            <a href="/" class="return-btn">Return to Dashboard</a>
+        </div>
+        
+        <div id="error-content" class="error-card" style="display: none;">
+            <div class="error-icon">✗</div>
+            <h1>Authentication Failed</h1>
+            <p id="error-message">An error occurred during the OAuth process.</p>
+            <a href="/auth/login" class="return-btn">Try Again</a>
+            <a href="/" class="return-btn" style="background: #6c757d; margin-left: 1rem;">Return to Home</a>
+        </div>
+    </div>
+
+    <script>
+        // Parse URL parameters to get callback data
+        const urlParams = new URLSearchParams(window.location.search);
+        const success = urlParams.get('success');
+        const error = urlParams.get('error');
+        const userId = urlParams.get('userId');
+        const scopes = urlParams.get('scopes');
+        
+        if (success === 'true') {
+            // Show success content
+            document.getElementById('success-content').style.display = 'block';
+            
+            // Populate user info if available
+            const userInfoDiv = document.getElementById('user-info');
+            let infoHtml = '';
+            
+            if (userId) {
+                infoHtml += `<div class="info-item"><strong>User ID:</strong> ${userId}</div>`;
+            }
+            
+            if (scopes) {
+                infoHtml += `<div class="info-item"><strong>Scopes:</strong> ${decodeURIComponent(scopes)}</div>`;
+            }
+            
+            if (infoHtml) {
+                userInfoDiv.innerHTML = infoHtml;
+            } else {
+                userInfoDiv.innerHTML = '<div class="info-item">Connection established successfully</div>';
+            }
+            
+            // Auto-redirect after 5 seconds
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 5000);
+            
+        } else if (error) {
+            // Show error content
+            document.getElementById('error-content').style.display = 'block';
+            document.getElementById('error-message').textContent = decodeURIComponent(error);
+        } else {
+            // Default to success if no specific parameters
+            document.getElementById('success-content').style.display = 'block';
+            document.getElementById('user-info').innerHTML = '<div class="info-item">Connection established successfully</div>';
+            
+            // Auto-redirect after 3 seconds
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

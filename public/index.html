@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fitbit Sync Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Error Banner -->
+        <div id="error-banner" class="error-banner hidden">
+            <span id="error-message"></span>
+            <button id="close-error" class="close-btn">&times;</button>
+        </div>
+
+        <!-- Header -->
+        <header class="header">
+            <h1>Fitbit Sync Dashboard</h1>
+            <div class="user-info">
+                <span id="user-name">Loading...</span>
+                <a href="/auth/logout" class="btn btn-secondary">Logout</a>
+            </div>
+        </header>
+
+        <!-- Action Buttons -->
+        <section class="actions">
+            <button id="generate-jwt-btn" class="btn btn-primary">Generate New JWT</button>
+            <button id="refresh-fitbit-btn" class="btn btn-primary">Refresh Fitbit Tokens</button>
+            <button id="manual-sync-btn" class="btn btn-primary">Manual Sync</button>
+        </section>
+
+        <!-- JWT Display -->
+        <div id="jwt-display" class="jwt-display hidden">
+            <h3>Personal JWT Token</h3>
+            <div class="jwt-container">
+                <textarea id="jwt-token" readonly></textarea>
+                <button id="copy-jwt-btn" class="btn btn-small">Copy</button>
+            </div>
+            <p class="jwt-info">Use this token in the Authorization header: <code>Bearer &lt;token&gt;</code></p>
+        </div>
+
+        <!-- Samples Section -->
+        <section class="samples-section">
+            <div class="samples-header">
+                <h2>Fitbit Samples</h2>
+                <div class="filters">
+                    <label for="type-filter">Filter by type:</label>
+                    <select id="type-filter">
+                        <option value="">All Types</option>
+                    </select>
+                    <button id="refresh-samples-btn" class="btn btn-small">Refresh</button>
+                </div>
+            </div>
+
+            <!-- Loading indicator -->
+            <div id="loading" class="loading hidden">Loading samples...</div>
+
+            <!-- Samples Table -->
+            <div class="table-container">
+                <table id="samples-table" class="samples-table">
+                    <thead>
+                        <tr>
+                            <th data-sort="type">Type</th>
+                            <th data-sort="value">Value</th>
+                            <th data-sort="timestamp">Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody id="samples-tbody">
+                        <!-- Samples will be loaded here -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="pagination">
+                <button id="prev-page" class="btn btn-small" disabled>Previous</button>
+                <span id="page-info">Page 1 of 1</span>
+                <button id="next-page" class="btn btn-small" disabled>Next</button>
+            </div>
+        </section>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
