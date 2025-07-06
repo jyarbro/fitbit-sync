@@ -362,21 +362,47 @@ class FitbitService {
    */
   processCaloriesData(dataset, bmrPerMinute, dateStr) {
     const samples = [];
-    
-    for (const dataPoint of dataset) {
-      const totalCalories = parseFloat(dataPoint.value);
-      const activeCalories = Math.max(0, totalCalories - bmrPerMinute);
-      
-      if (activeCalories > 0) {
-        const timestamp = new Date(`${dateStr}T${dataPoint.time}`);
-        samples.push({
-          type: 'activeCalories',
-          value: activeCalories,
-          datetime: timestamp.toISOString()
-        });
+    const blockSizes = [30, 15]; // in minutes
+    let i = 0;
+    while (i < dataset.length) {
+      let blockSize = blockSizes[0];
+      let block = dataset.slice(i, i + blockSize);
+      // Calculate active calories for the block (remove BMR per minute)
+      const activeCaloriesArr = block.map(dataPoint => Math.max(0, parseFloat(dataPoint.value) - bmrPerMinute));
+      // Calculate total and standard deviation
+      const total = activeCaloriesArr.reduce((a, b) => a + b, 0);
+      const avg = total / activeCaloriesArr.length;
+      const stddev = Math.sqrt(activeCaloriesArr.reduce((a, b) => a + Math.pow(b - avg, 2), 0) / activeCaloriesArr.length);
+      // Heuristic: if stddev > 20% of avg and blockSize > 15, split into 15-min blocks
+      if (blockSize === 30 && stddev > 0.2 * avg) {
+        // Split into two 15-min blocks
+        for (let j = 0; j < 2; j++) {
+          const subBlock = dataset.slice(i + j * 15, i + (j + 1) * 15);
+          const subActiveArr = subBlock.map(dataPoint => Math.max(0, parseFloat(dataPoint.value) - bmrPerMinute));
+          const subTotal = subActiveArr.reduce((a, b) => a + b, 0);
+          if (subTotal > 0) {
+            const subTimestamp = new Date(`${dateStr}T${subBlock[subBlock.length - 1].time}`);
+            samples.push({
+              type: 'activeCalories',
+              value: subTotal,
+              datetime: subTimestamp.toISOString()
+            });
+          }
+        }
+        i += 30;
+      } else {
+        // Use the block as is
+        if (total > 0) {
+          const timestamp = new Date(`${dateStr}T${block[block.length - 1].time}`);
+          samples.push({
+            type: 'activeCalories',
+            value: total,
+            datetime: timestamp.toISOString()
+          });
+        }
+        i += blockSize;
       }
     }
-    
     return samples;
   }
 
